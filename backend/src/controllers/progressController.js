@@ -88,7 +88,8 @@ const updateProgress = async (req, res) => {
       seekCount,
       replayCount,
       lastSessionDuration,
-      playCount
+      playCount,
+      watchedSegments
     } = req.body;
     const userId = req.user.id;
 
@@ -99,12 +100,23 @@ const updateProgress = async (req, res) => {
 
     console.log('Existing progress found:', !!progress);
 
-    // Use the provided watch percentage directly
-    const calculatedWatchPercentage = watchPercentage || 0;
-    const totalWatchedDuration = (watchDuration || 0);
+    // Calculate total watched duration from segments
+    let totalWatchedDuration = 0;
+    if (watchedSegments && watchedSegments.length > 0) {
+      // Filter out temporary segments for calculation
+      const finalSegments = watchedSegments.filter(seg => !seg.isTemporary);
+      totalWatchedDuration = finalSegments.reduce((total, segment) => {
+        return total + (segment.end - segment.start);
+      }, 0);
+    }
+    
+    // Use the maximum of provided watch duration or calculated from segments
+    const finalWatchedDuration = Math.max(watchDuration || 0, totalWatchedDuration);
+    const calculatedWatchPercentage = totalDuration > 0 ? (finalWatchedDuration / totalDuration) * 100 : 0;
     
     console.log('=== PROGRESS CALCULATION ===');
-    console.log('Watch duration:', totalWatchedDuration);
+    console.log('Watched segments:', watchedSegments);
+    console.log('Total watched duration:', finalWatchedDuration);
     console.log('Total duration:', totalDuration);
     console.log('Watch percentage:', calculatedWatchPercentage);
 
@@ -114,7 +126,7 @@ const updateProgress = async (req, res) => {
       progress = await Progress.create({
         userId,
         videoId,
-        watchedDuration: totalWatchedDuration,
+        watchedDuration: finalWatchedDuration,
         totalDuration,
         watchPercentage: calculatedWatchPercentage,
         rating,
@@ -132,10 +144,11 @@ const updateProgress = async (req, res) => {
     } else {
       console.log('Updating existing progress record...');
       // Update existing progress
-      const updateData = {
-        watchedDuration: totalWatchedDuration,
+      const       updateData = {
+        watchedDuration: finalWatchedDuration,
         totalDuration,
         watchPercentage: calculatedWatchPercentage,
+        watchedSegments: watchedSegments || [],
         lastWatchedAt: new Date()
       };
 
@@ -147,6 +160,7 @@ const updateProgress = async (req, res) => {
       if (replayCount !== undefined) updateData.replayCount = replayCount;
       if (lastSessionDuration !== undefined) updateData.lastSessionDuration = lastSessionDuration;
       if (playCount !== undefined) updateData.playCount = playCount;
+      if (watchedSegments !== undefined) updateData.watchedSegments = watchedSegments;
 
       console.log('Update data:', updateData);
       await progress.update(updateData);

@@ -37,12 +37,15 @@ const VideoPlayer = () => {
   const [duration, setDuration] = useState(0);
   
   // Progress tracking states
+  const [watchedSegments, setWatchedSegments] = useState([]);
   const [isWatching, setIsWatching] = useState(false);
   const [lastSaveTime, setLastSaveTime] = useState(0);
   const [lastCurrentTime, setLastCurrentTime] = useState(0);
   const [isCurrentlyWatching, setIsCurrentlyWatching] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
   const [showCompletionNotification, setShowCompletionNotification] = useState(false);
+  const [maxWatchedTime, setMaxWatchedTime] = useState(0);
+  const [isTabVisible, setIsTabVisible] = useState(true);
 
 
 
@@ -60,6 +63,60 @@ const VideoPlayer = () => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Merge overlapping segments
+  const mergeSegments = (segments) => {
+    if (segments.length <= 1) return segments;
+    
+    const sorted = [...segments].sort((a, b) => a.start - b.start);
+    const merged = [sorted[0]];
+    
+    for (let i = 1; i < sorted.length; i++) {
+      const current = sorted[i];
+      const last = merged[merged.length - 1];
+      
+      if (current.start <= last.end) {
+        // Overlapping or adjacent segments, merge them
+        last.end = Math.max(last.end, current.end);
+      } else {
+        // No overlap, add as new segment
+        merged.push(current);
+      }
+    }
+    return merged;
+  };
+
+  // Calculate unwatched segments
+  const getUnwatchedSegments = () => {
+    if (!duration) {
+      return [{ start: 0, end: 0 }];
+    }
+    
+    if (!watchedSegments.length) {
+      return [{ start: 0, end: duration }];
+    }
+    
+    const unwatched = [];
+    let lastEnd = 0;
+    
+    // Sort segments by start time
+    const sortedSegments = [...watchedSegments].sort((a, b) => a.start - b.start);
+    
+    sortedSegments.forEach(segment => {
+      // If there's a gap before this segment, it's unwatched
+      if (segment.start > lastEnd) {
+        unwatched.push({ start: lastEnd, end: segment.start });
+      }
+      lastEnd = Math.max(lastEnd, segment.end);
+    });
+    
+    // If there's unwatched time after the last segment
+    if (lastEnd < duration) {
+      unwatched.push({ start: lastEnd, end: duration });
+    }
+    
+    return unwatched;
   };
 
 
@@ -124,6 +181,8 @@ const VideoPlayer = () => {
         setNotes(video.progress.notes || '');
         setCurrentProgress(video.progress.watchPercentage || 0);
         setIsCompleted(video.progress.isCompleted || false);
+        setWatchedSegments(video.progress.watchedSegments || []);
+        setMaxWatchedTime(video.progress.watchedDuration || 0);
         
         // If video is completed, ensure it stays completed
         if (video.progress.isCompleted) {
@@ -148,13 +207,21 @@ const VideoPlayer = () => {
     if (!videoData || !duration) return;
 
     try {
-      // Calculate progress percentage based on current time
-      const watchPercentage = (currentTime / duration) * 100;
+      // Calculate total watched time from segments
+      let totalWatchedTime = 0;
+      watchedSegments.forEach(segment => {
+        totalWatchedTime += (segment.end - segment.start);
+      });
+
+      // Use the maximum of current progress or previously watched time
+      const finalWatchedTime = Math.max(totalWatchedTime, maxWatchedTime);
+      const watchPercentage = (finalWatchedTime / duration) * 100;
 
       const progressData = {
-        watchDuration: currentTime,
+        watchDuration: finalWatchedTime,
         totalDuration: duration,
-        watchPercentage: watchPercentage
+        watchPercentage: watchPercentage,
+        watchedSegments: watchedSegments
       };
 
       console.log('Saving progress:', progressData);
@@ -169,6 +236,7 @@ const VideoPlayer = () => {
         // Update progress state with server response
         setCurrentProgress(response.data.progress.watchPercentage || 0);
         setIsCompleted(isNowCompleted);
+        setMaxWatchedTime(finalWatchedTime);
         
         // Show completion notification if video was just completed
         if (!wasCompleted && isNowCompleted) {
@@ -211,9 +279,29 @@ const VideoPlayer = () => {
     const currentTime = video.currentTime;
     setCurrentTime(currentTime);
     
-    // Update progress percentage
+    // Update max watched time (progress never goes backward)
+    setMaxWatchedTime(prev => Math.max(prev, currentTime));
+    
+    // If actively watching, add to watched segments
+    if (isCurrentlyWatching && isTabVisible) {
+      // Create a temporary segment for current watching session
+      const currentSegment = { 
+        start: Math.max(0, currentTime - 3), // Start 3 seconds back
+        end: currentTime,
+        isTemporary: true 
+      };
+      
+      // Update watched segments
+      setWatchedSegments(prev => {
+        // Remove any existing temporary segments and add the new one
+        const filtered = prev.filter(seg => !seg.isTemporary);
+        return mergeSegments([...filtered, currentSegment]);
+      });
+    }
+    
+    // Update progress percentage based on max watched time (never goes backward)
     if (duration > 0) {
-      const progressPercentage = (currentTime / duration) * 100;
+      const progressPercentage = (Math.max(currentTime, maxWatchedTime) / duration) * 100;
       setCurrentProgress(progressPercentage);
     }
     
@@ -233,6 +321,20 @@ const VideoPlayer = () => {
   };
 
   const handleVideoPause = () => {
+    // Finalize current watching session as permanent segment
+    if (isCurrentlyWatching && currentTime > 0) {
+      const finalSegment = {
+        start: Math.max(0, currentTime - 3), // Last 3 seconds
+        end: currentTime
+      };
+      
+      setWatchedSegments(prev => {
+        // Remove temporary segments and add final segment
+        const filtered = prev.filter(seg => !seg.isTemporary);
+        return mergeSegments([...filtered, finalSegment]);
+      });
+    }
+    
     setIsPlaying(false);
     setIsWatching(false);
     setIsCurrentlyWatching(false);
@@ -252,6 +354,47 @@ const VideoPlayer = () => {
     }, 1000);
     saveProgress();
   };
+
+  // Tab visibility and window focus control - pause video when tab is not visible or window loses focus
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // Tab is hidden, pause video
+        if (isPlaying && player) {
+          player.pause();
+          setIsTabVisible(false);
+        }
+      } else {
+        // Tab is visible again
+        setIsTabVisible(true);
+      }
+    };
+
+    const handleWindowBlur = () => {
+      // Window loses focus, pause video
+      if (isPlaying && player) {
+        player.pause();
+        setIsTabVisible(false);
+      }
+    };
+
+    const handleWindowFocus = () => {
+      // Window gains focus
+      setIsTabVisible(true);
+    };
+
+    // Add event listeners
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleWindowBlur);
+    window.addEventListener('focus', handleWindowFocus);
+
+    // Cleanup
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleWindowBlur);
+      window.removeEventListener('focus', handleWindowFocus);
+    };
+  }, [isPlaying, player]);
 
   // Fetch video data on component mount
   useEffect(() => {
@@ -487,43 +630,89 @@ const VideoPlayer = () => {
               <Box sx={{ 
                 width: '100%', 
                 height: 24, 
-                backgroundColor: 'grey.300', 
+                backgroundColor: '#e0e0e0', // Grey background
                 borderRadius: 2,
                 position: 'relative',
                 overflow: 'hidden',
                 border: '1px solid #ddd'
               }}>
-                {/* Progress bar - show current progress as green, unwatched as red */}
-                <Box
-                  sx={{
-                    position: 'absolute',
-                    left: '0%',
-                    width: `${Math.min(currentProgress, 100)}%`,
-                    height: '100%',
-                    backgroundColor: '#4caf50', // Green for watched progress
-                    borderRadius: 1,
-                    zIndex: 2
-                  }}
-                />
+                {/* Watched segments - permanent green */}
+                {watchedSegments
+                  .filter(segment => !segment.isTemporary)
+                  .map((segment, index) => {
+                    const startPercent = (segment.start / duration) * 100;
+                    const endPercent = (segment.end / duration) * 100;
+                    const width = endPercent - startPercent;
+                    
+                    return (
+                      <Box
+                        key={`watched-${index}`}
+                        sx={{
+                          position: 'absolute',
+                          left: `${startPercent}%`,
+                          width: `${width}%`,
+                          height: '100%',
+                          backgroundColor: '#4caf50', // Green for watched
+                          borderRadius: 1,
+                          zIndex: 2
+                        }}
+                      />
+                    );
+                  })}
                 
-                {/* Unwatched portion - red background */}
-                <Box
-                  sx={{
-                    position: 'absolute',
-                    left: '0%',
-                    width: '100%',
-                    height: '100%',
-                    backgroundColor: '#f44336', // Red for unwatched
-                    borderRadius: 1,
-                    zIndex: 1
-                  }}
-                />
+                {/* Current watching segment - lighter green */}
+                {watchedSegments
+                  .filter(segment => segment.isTemporary)
+                  .map((segment, index) => {
+                    const startPercent = (segment.start / duration) * 100;
+                    const endPercent = (segment.end / duration) * 100;
+                    const width = endPercent - startPercent;
+                    
+                    return (
+                      <Box
+                        key={`current-${index}`}
+                        sx={{
+                          position: 'absolute',
+                          left: `${startPercent}%`,
+                          width: `${width}%`,
+                          height: '100%',
+                          backgroundColor: '#66bb6a', // Lighter green for current
+                          borderRadius: 1,
+                          border: '2px solid #4caf50',
+                          zIndex: 3
+                        }}
+                      />
+                    );
+                  })}
+                
+                {/* Unwatched segments - red (only for gaps between watched segments) */}
+                {getUnwatchedSegments().map((segment, index) => {
+                  const startPercent = (segment.start / duration) * 100;
+                  const endPercent = (segment.end / duration) * 100;
+                  const width = endPercent - startPercent;
+                  
+                  return (
+                    <Box
+                      key={`unwatched-${index}`}
+                      sx={{
+                        position: 'absolute',
+                        left: `${startPercent}%`,
+                        width: `${width}%`,
+                        height: '100%',
+                        backgroundColor: '#f44336', // Red for unwatched gaps
+                        borderRadius: 1,
+                        zIndex: 1
+                      }}
+                    />
+                  );
+                })}
               </Box>
             </Box>
 
             {/* Progress Summary */}
             <Box sx={{ mt: 2 }}>
               <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mb: 1 }}>
+                Max Watched: {formatTime(maxWatchedTime)} | 
                 Progress: {typeof currentProgress === 'number' ? currentProgress.toFixed(1) : '0.0'}% | 
                 Total: {formatTime(duration)}
               </Typography>
