@@ -1,0 +1,350 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Container,
+  Typography,
+  Box,
+  Grid,
+  Card,
+  CardContent,
+  LinearProgress,
+  Button,
+  CircularProgress,
+  Alert,
+  Chip
+} from '@mui/material';
+import {
+  PlayCircle as PlayIcon,
+  TrendingUp as TrendingIcon,
+  Schedule as ScheduleIcon,
+  CheckCircle as CheckIcon,
+  School as SchoolIcon
+} from '@mui/icons-material';
+import { useAuth } from '../contexts/AuthContext';
+import { Link } from 'react-router-dom';
+import axios from 'axios';
+
+const Dashboard = () => {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [stats, setStats] = useState({
+    totalCourses: 0,
+    completedCourses: 0,
+    totalVideos: 0,
+    completedVideos: 0,
+    totalWatchTime: 0,
+    averageProgress: 0
+  });
+  const [enrolledCourses, setEnrolledCourses] = useState([]);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Fetch user's enrolled courses
+      const coursesResponse = await axios.get('/api/courses/enrolled');
+      const courses = coursesResponse.data.data || [];
+
+      // Calculate stats
+      let totalVideos = 0;
+      let completedVideos = 0;
+      let totalWatchTime = 0;
+      let totalProgress = 0;
+
+      // Fetch progress for each course
+      for (const course of courses) {
+        if (course.videos) {
+          totalVideos += course.videos.length;
+        }
+
+        // Get progress for this course
+        try {
+          const progressResponse = await axios.get(`/api/videos/course/${course.id}/progress`);
+          const videosWithProgress = progressResponse.data.data || [];
+          
+          let courseProgress = 0;
+          videosWithProgress.forEach(video => {
+            if (video.Progress && video.Progress.length > 0) {
+              const progress = video.Progress[0];
+              if (progress.isCompleted) {
+                completedVideos++;
+              }
+              totalWatchTime += (progress.watchDuration || 0) / 3600; // Convert to hours
+              courseProgress += progress.watchPercentage || 0;
+            }
+          });
+
+          // Calculate average progress for this course
+          if (course.videos && course.videos.length > 0) {
+            courseProgress = Math.round(courseProgress / course.videos.length);
+          }
+          totalProgress += courseProgress;
+
+          // Update course with progress
+          course.progress = courseProgress;
+        } catch (error) {
+          console.error(`Error fetching progress for course ${course.id}:`, error);
+          course.progress = 0;
+        }
+      }
+
+      const averageProgress = courses.length > 0 ? Math.round(totalProgress / courses.length) : 0;
+
+      setStats({
+        totalCourses: courses.length,
+        completedCourses: 0, // Will be calculated based on course completion logic
+        totalVideos,
+        completedVideos,
+        totalWatchTime: Math.round(totalWatchTime * 10) / 10,
+        averageProgress
+      });
+
+      // Set enrolled courses
+      setEnrolledCourses(courses.map(course => ({
+        id: course.id,
+        title: course.title,
+        description: course.description,
+        progress: course.progress || 0,
+        teacher: course.teacher,
+        videoCount: course.videos ? course.videos.length : 0,
+        thumbnail: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjBmMGYwIi8+CiAgPHRleHQgeD0iNTAlIiB5PSI1MCUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM5OTkiPjMwMHg0NTA8L3RleHQ+Cjwvc3ZnPg=='
+      })));
+
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+      setError('Failed to load dashboard data. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatDuration = (hours) => {
+    if (hours < 1) {
+      return `${Math.round(hours * 60)}m`;
+    }
+    const wholeHours = Math.floor(hours);
+    const minutes = Math.round((hours - wholeHours) * 60);
+    return minutes > 0 ? `${wholeHours}h ${minutes}m` : `${wholeHours}h`;
+  };
+
+  if (loading) {
+    return (
+      <Container maxWidth="lg" sx={{ mt: 4 }}>
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+          <CircularProgress />
+        </Box>
+      </Container>
+    );
+  }
+
+  if (error) {
+    return (
+      <Container maxWidth="lg" sx={{ mt: 4 }}>
+        <Alert severity="error">{error}</Alert>
+      </Container>
+    );
+  }
+
+  return (
+    <Container maxWidth="lg" sx={{ mt: 4 }}>
+      {/* Welcome Section */}
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 700 }}>
+          Welcome back, {user?.firstName}!
+        </Typography>
+        <Typography variant="h6" color="textSecondary">
+          Continue your learning journey
+        </Typography>
+      </Box>
+
+      {/* Stats Cards */}
+      <Grid container spacing={3} sx={{ mb: 4 }}>
+        <Grid item xs={12} sm={6} md={3}>
+          <Card>
+            <CardContent>
+              <Box display="flex" alignItems="center" gap={2}>
+                <SchoolIcon color="primary" sx={{ fontSize: 40 }} />
+                <Box>
+                  <Typography variant="h4" sx={{ fontWeight: 700 }}>
+                    {stats.totalCourses}
+                  </Typography>
+                  <Typography variant="body2" color="textSecondary">
+                    Enrolled Courses
+                  </Typography>
+                </Box>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        <Grid item xs={12} sm={6} md={3}>
+          <Card>
+            <CardContent>
+              <Box display="flex" alignItems="center" gap={2}>
+                <PlayIcon color="primary" sx={{ fontSize: 40 }} />
+                <Box>
+                  <Typography variant="h4" sx={{ fontWeight: 700 }}>
+                    {stats.totalVideos}
+                  </Typography>
+                  <Typography variant="body2" color="textSecondary">
+                    Total Videos
+                  </Typography>
+                </Box>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        <Grid item xs={12} sm={6} md={3}>
+          <Card>
+            <CardContent>
+              <Box display="flex" alignItems="center" gap={2}>
+                <CheckIcon color="success" sx={{ fontSize: 40 }} />
+                <Box>
+                  <Typography variant="h4" sx={{ fontWeight: 700 }}>
+                    {stats.completedVideos}
+                  </Typography>
+                  <Typography variant="body2" color="textSecondary">
+                    Completed Videos
+                  </Typography>
+                </Box>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        <Grid item xs={12} sm={6} md={3}>
+          <Card>
+            <CardContent>
+              <Box display="flex" alignItems="center" gap={2}>
+                <ScheduleIcon color="primary" sx={{ fontSize: 40 }} />
+                <Box>
+                  <Typography variant="h4" sx={{ fontWeight: 700 }}>
+                    {formatDuration(stats.totalWatchTime)}
+                  </Typography>
+                  <Typography variant="body2" color="textSecondary">
+                    Total Watch Time
+                  </Typography>
+                </Box>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+
+      {/* Overall Progress */}
+      <Card sx={{ mb: 4 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            Overall Learning Progress
+          </Typography>
+          <Box sx={{ mb: 2 }}>
+            <LinearProgress 
+              variant="determinate" 
+              value={stats.averageProgress} 
+              sx={{ height: 10, borderRadius: 5 }}
+            />
+          </Box>
+          <Typography variant="body2" color="textSecondary">
+            {stats.averageProgress}% average completion across all courses
+          </Typography>
+        </CardContent>
+      </Card>
+
+      {/* Enrolled Courses */}
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h5" gutterBottom sx={{ fontWeight: 600 }}>
+          Your Enrolled Courses
+        </Typography>
+        
+        {enrolledCourses.length > 0 ? (
+          <Grid container spacing={3}>
+            {enrolledCourses.map((course) => (
+              <Grid item xs={12} md={6} key={course.id}>
+                <Card sx={{ height: '100%' }}>
+                  <CardContent>
+                    <Box display="flex" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 2 }}>
+                      <Typography variant="h6" sx={{ fontWeight: 600, flex: 1 }}>
+                        {course.title}
+                      </Typography>
+                      <Chip 
+                        label={`${course.videoCount} videos`} 
+                        size="small" 
+                        variant="outlined"
+                      />
+                    </Box>
+                    
+                    {course.description && (
+                      <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+                        {course.description}
+                      </Typography>
+                    )}
+                    
+                    {course.teacher && (
+                      <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+                        By {course.teacher.firstName} {course.teacher.lastName}
+                      </Typography>
+                    )}
+                    
+                    <Box sx={{ mb: 2 }}>
+                      <Box display="flex" justifyContent="space-between" sx={{ mb: 1 }}>
+                        <Typography variant="body2" color="textSecondary">
+                          Progress
+                        </Typography>
+                        <Typography variant="body2" color="textSecondary">
+                          {course.progress}%
+                        </Typography>
+                      </Box>
+                      <LinearProgress 
+                        variant="determinate" 
+                        value={course.progress} 
+                        sx={{ height: 6, borderRadius: 3 }}
+                      />
+                    </Box>
+                    
+                    <Button
+                      component={Link}
+                      to={`/course/${course.id}`}
+                      variant="contained"
+                      fullWidth
+                      startIcon={<PlayIcon />}
+                    >
+                      Continue Learning
+                    </Button>
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+        ) : (
+          <Card>
+            <CardContent sx={{ textAlign: 'center', py: 4 }}>
+              <SchoolIcon sx={{ fontSize: 60, color: 'text.secondary', mb: 2 }} />
+              <Typography variant="h6" color="textSecondary" gutterBottom>
+                No courses enrolled yet
+              </Typography>
+              <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+                Start your learning journey by enrolling in courses
+              </Typography>
+              <Button
+                component={Link}
+                to="/courses"
+                variant="contained"
+                size="large"
+              >
+                Browse Courses
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+      </Box>
+    </Container>
+  );
+};
+
+export default Dashboard;
