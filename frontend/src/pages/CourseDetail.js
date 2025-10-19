@@ -337,11 +337,7 @@ const CourseDetail = () => {
                                               <Typography variant="body1" sx={{ fontWeight: isWatched ? 600 : 400 }}>
                                                 {videoIndex + 1}. {video.title}
                                               </Typography>
-                                              <Chip 
-                                                label={formatDuration(video.duration)} 
-                                                size="small" 
-                                                variant="outlined"
-                                              />
+                                              {/* Duration chip removed per request */}
                                               {isCompleted && (
                                                 <Chip 
                                                   label="Completed" 
@@ -454,11 +450,7 @@ const CourseDetail = () => {
                             <Typography variant="body1" sx={{ fontWeight: isWatched ? 600 : 400 }}>
                               {index + 1}. {video.title}
                             </Typography>
-                            <Chip 
-                              label={formatDuration(video.duration)} 
-                              size="small" 
-                              variant="outlined"
-                            />
+                            {/* Duration chip removed per request */}
                             {isCompleted && (
                               <Chip 
                                 label="Completed" 

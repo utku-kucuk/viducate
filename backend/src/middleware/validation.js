@@ -102,8 +102,8 @@ const validateProgress = [
     .withMessage('Total duration must be a positive number'),
   body('watchPercentage')
     .optional()
-    .isFloat({ min: 0, max: 100 })
-    .withMessage('Watch percentage must be between 0 and 100'),
+    .isFloat({ min: 0 })
+    .withMessage('Watch percentage must be a non-negative number'),
   body('rating')
     .optional()
     .isInt({ min: 1, max: 5 })

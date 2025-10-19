@@ -6,6 +6,7 @@ const { validate } = require('../middleware/validation');
 const multer = require('multer');
 const path = require('path');
 const { Video, User, Progress } = require('../models');
+const videoController = require('../controllers/videoController');
 
 // Configure multer for video uploads
 const storage = multer.diskStorage({
@@ -211,36 +212,6 @@ router.delete('/:id', auth, requireTeacher, async (req, res) => {
 });
 
 // Get progress for all videos in a course
-router.get('/course/:courseId/progress', auth, async (req, res) => {
-  try {
-    const { courseId } = req.params;
-    const userId = req.user.id;
-
-    // Get all videos for this course
-    const videos = await Video.findAll({
-      where: { courseId },
-      include: [
-        {
-          model: Progress,
-          where: { userId },
-          required: false,
-          as: 'Progress'
-        }
-      ],
-      order: [['order', 'ASC']]
-    });
-
-    res.json({
-      success: true,
-      data: videos
-    });
-  } catch (error) {
-    console.error('Error fetching course progress:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch course progress'
-    });
-  }
-});
+router.get('/course/:courseId/progress', auth, videoController.getStudentProgress);
 
 module.exports = router;

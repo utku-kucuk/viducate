@@ -136,10 +136,10 @@ async function startServer() {
     await sequelize.authenticate();
     console.log('✅ Database connection established successfully.');
     
-    // Sync database (in development)
+    // Sync database (avoid alter for SQLite to prevent FK/unique issues)
     if (process.env.NODE_ENV === 'development') {
-      await sequelize.sync({ alter: true });
-      console.log('✅ Database synchronized.');
+      await sequelize.sync();
+      console.log('✅ Database synchronized (no alter).');
     }
     
     app.listen(PORT, () => {
