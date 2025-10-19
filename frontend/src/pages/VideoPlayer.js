@@ -45,7 +45,7 @@ const VideoPlayer = () => {
   const [progressVersion, setProgressVersion] = useState(0);
   const [maxWatchedTime, setMaxWatchedTime] = useState(0);
   const [isTabVisible, setIsTabVisible] = useState(true);
-  const hasMarkedOnEnterRef = useRef({});
+  const hasRefreshedSidebarForCompletionRef = useRef({});
 
 
 
@@ -194,54 +194,38 @@ const VideoPlayer = () => {
       const video = response.data.data;
       console.log('Video data set:', video);
       setVideoData(video);
-      
-      // Initialize progress data
-      if (video.progress) {
-        console.log('Progress data found:', video.progress);
-        setNotes(video.progress.notes || '');
-        const sanitized = mergeSegments(clampSegmentsToDuration(video.progress.watchedSegments || [], video.duration || duration));
-        // compute progress from sanitized segments only
-        const totalWatched = sanitized.reduce((sum, s) => sum + (s.end - s.start), 0);
-        const pct = (totalWatched / (video.duration || duration || 1)) * 100;
-        setCurrentProgress(Math.min(Math.max(pct, 0), 100));
-        setIsCompleted(pct >= 90);
-        setWatchedSegments(sanitized);
-        setMaxWatchedTime(totalWatched);
-        
-        // If video is completed, ensure it stays completed
-        if (video.progress.isCompleted) {
-          console.log('Video is already completed, maintaining completion status');
-        }
+      // If backend provides duration, set it immediately for correct initial progress math
+      if (typeof video?.duration === 'number' && video.duration > 0) {
+        setDuration(video.duration);
       }
       
-      // Immediately and permanently mark this video as watched on enter/preview
-      // This ensures the sidebar shows a persistent tick and unlocks the next video
+      // Initialize progress data from dedicated progress API (ensures persistence on revisit)
       try {
-        const alreadyCompleted = Boolean(video?.progress?.isCompleted);
-        const alreadyMarked = Boolean(hasMarkedOnEnterRef.current[videoId]);
-        const dur = Number(video?.duration || 0);
-        if (!alreadyMarked && dur > 0 && !alreadyCompleted) {
-          hasMarkedOnEnterRef.current[videoId] = true;
-          const payload = {
-            watchDuration: dur,
-            totalDuration: dur,
-            watchPercentage: 100,
-            watchedSegments: [{ start: 0, end: dur }]
-          };
-          console.log('Marking video as watched immediately on enter:', payload);
-          const completeResp = await axios.put(`/api/progress/video/${videoId}`, payload);
-          const serverProgress = completeResp?.data?.progress;
-          if (serverProgress) {
-            setIsCompleted(Boolean(serverProgress.isCompleted));
-            setCurrentProgress(Number(serverProgress.watchPercentage || 100));
-            setWatchedSegments([{ start: 0, end: dur }]);
-            setMaxWatchedTime(dur);
-            // trigger sidebar to refetch and reflect tick + next unlock
+        const token = localStorage.getItem('token');
+        if (token) {
+          axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        }
+        const pgResp = await axios.get(`/api/progress/video/${videoId}`);
+        const progress = pgResp?.data?.progress || null;
+        if (progress) {
+          console.log('Progress data found (progress API):', progress);
+          setNotes(progress.notes || '');
+          const baseDuration = typeof video?.duration === 'number' && video.duration > 0 ? video.duration : duration;
+          const sanitized = mergeSegments(clampSegmentsToDuration(progress.watchedSegments || [], baseDuration));
+          const totalWatched = sanitized.reduce((sum, s) => sum + (s.end - s.start), 0);
+          const pct = baseDuration > 0 ? (totalWatched / baseDuration) * 100 : 0;
+          setCurrentProgress(Math.min(Math.max(pct, 0), 100));
+          setIsCompleted(Boolean(progress.isCompleted) || pct >= 90);
+          setWatchedSegments(sanitized);
+          setMaxWatchedTime(totalWatched);
+          // Trigger sidebar refresh if server says completed and we haven't yet
+          if ((progress.isCompleted || pct >= 90) && videoId && !hasRefreshedSidebarForCompletionRef.current[videoId]) {
+            hasRefreshedSidebarForCompletionRef.current[videoId] = true;
             setProgressVersion(v => v + 1);
           }
         }
-      } catch (e) {
-        console.error('Failed to mark video watched on enter:', e);
+      } catch (err) {
+        console.error('Failed to fetch progress for video:', err);
       }
       
       // Fetch course data to determine next video
@@ -285,17 +269,19 @@ const VideoPlayer = () => {
       const response = await axios.put(`/api/progress/video/${videoId}`, progressData);
       
       if (response.data.progress) {
-        const isNowCompleted = response.data.progress.isCompleted || false;
-        const wasCompleted = isCompleted;
-        
+        const serverPct = Number(response.data.progress.watchPercentage || 0);
+        const serverCompleted = Boolean(response.data.progress.isCompleted);
+
         // Update progress state with server response
-        setCurrentProgress(response.data.progress.watchPercentage || 0);
-        setIsCompleted(isNowCompleted);
+        setCurrentProgress(serverPct);
+        setIsCompleted(serverCompleted || serverPct >= 90);
         setMaxWatchedTime(finalWatchedTime);
-        if (!wasCompleted && isNowCompleted) {
+
+        // Ensure sidebar refreshes exactly once when server confirms completion
+        if ((serverCompleted || serverPct >= 90) && videoId && !hasRefreshedSidebarForCompletionRef.current[videoId]) {
+          hasRefreshedSidebarForCompletionRef.current[videoId] = true;
           setProgressVersion(v => v + 1);
         }
-        
         // Optionally show a completion notification here if desired
       }
     } catch (err) {
@@ -354,6 +340,8 @@ const VideoPlayer = () => {
       // Local completion gate at 90%
       if (!isCompleted && progressPercentage >= 90) {
         setIsCompleted(true);
+        // Trigger an immediate save once the threshold is crossed so the sidebar ticks instantly
+        saveProgress();
       }
     }
     
@@ -548,9 +536,6 @@ const VideoPlayer = () => {
         <Box sx={{ flex: 1 }}>
           {/* Video Player */}
           <Box sx={{ mb: 3 }}>
-            <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-              Video File: {videoData.fileUrl}
-            </Typography>
             
             {/* Local Video Player */}
             <Box sx={{ position: 'relative' }}>

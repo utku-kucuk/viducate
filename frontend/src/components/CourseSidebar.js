@@ -61,6 +61,11 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }
       
       try {
         setLoading(true);
+        // Ensure auth header is present (handles hard refreshes)
+        const token = localStorage.getItem('token');
+        if (token) {
+          axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        }
         const allVideos = [];
         
         // Extract all videos from course structure
@@ -88,10 +93,11 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }
         // Fetch progress for all videos
         const progressPromises = allVideos.map(async ({ placeholder, realId }) => {
           try {
-            const response = await axios.get(`/api/videos/${realId}`);
+            // Use dedicated progress API for reliable completion status
+            const response = await axios.get(`/api/progress/video/${realId}`);
             return {
               videoId: realId,
-              progress: response.data.data.progress
+              progress: response.data.progress
             };
           } catch (error) {
             console.error(`Error fetching progress for video ${realId}:`, error);
@@ -127,7 +133,10 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }
         if (chapter.sections && Array.isArray(chapter.sections)) {
           chapter.sections.forEach(section => {
             if (section.videos && Array.isArray(section.videos)) {
-              const hasCurrentVideo = section.videos.some(video => video.id === currentVideoId);
+              const hasCurrentVideo = section.videos.some(video => {
+                const vid = resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id;
+                return vid === currentVideoId;
+              });
               if (hasCurrentVideo) {
                 newExpandedChapters[chapter.id] = true;
               }
