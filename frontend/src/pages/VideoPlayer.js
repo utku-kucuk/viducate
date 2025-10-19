@@ -42,8 +42,10 @@ const VideoPlayer = () => {
   const [lastSaveTime, setLastSaveTime] = useState(0);
   const [isCurrentlyWatching, setIsCurrentlyWatching] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [progressVersion, setProgressVersion] = useState(0);
   const [maxWatchedTime, setMaxWatchedTime] = useState(0);
   const [isTabVisible, setIsTabVisible] = useState(true);
+  const hasMarkedOnEnterRef = useRef({});
 
 
 
@@ -87,13 +89,27 @@ const VideoPlayer = () => {
     return merged;
   };
 
+  // Clamp segments to [0, duration]
+  const clampSegmentsToDuration = (segments, dur) => {
+    const safeDuration = Math.max(0, Number(dur) || 0);
+    return (segments || [])
+      .map(seg => {
+        const start = Math.max(0, Math.min(safeDuration, Number(seg.start) || 0));
+        const endRaw = Math.max(start, Number(seg.end) || start);
+        const end = Math.min(safeDuration, endRaw);
+        return { start, end };
+      })
+      .filter(seg => seg.end > seg.start);
+  };
+
   // Utility to combine permanent watched segments with current session for calculations
   const getAllWatchedForCalc = () => {
     const parts = [...watchedSegments];
     if (currentWatchSegment && currentWatchSegment.end > currentWatchSegment.start) {
       parts.push({ start: currentWatchSegment.start, end: currentWatchSegment.end });
     }
-    return mergeSegments(parts);
+    const clamped = clampSegmentsToDuration(parts, duration);
+    return mergeSegments(clamped);
   };
 
 
@@ -145,8 +161,35 @@ const VideoPlayer = () => {
   const fetchVideoData = async () => {
     try {
       setLoading(true);
+      setError(null);
       console.log('Fetching video data for ID:', videoId);
-      const response = await axios.get(`/api/videos/${videoId}`);
+      // Reset local progress states before loading new video
+      setVideoData(null);
+      setWatchedSegments([]);
+      setCurrentWatchSegment(null);
+      setIsCompleted(false);
+      setCurrentProgress(0);
+      setMaxWatchedTime(0);
+      sessionStartRef.current = 0;
+      lastTimeRef.current = 0;
+      // Ensure auth header exists on hard refresh
+      const token = localStorage.getItem('token');
+      if (token) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      }
+
+      let response;
+      try {
+        response = await axios.get(`/api/videos/${videoId}`);
+      } catch (err) {
+        // If unauthorized once, attempt a single retry after (re)applying token
+        if (err?.response?.status === 401 && token) {
+          axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+          response = await axios.get(`/api/videos/${videoId}`);
+        } else {
+          throw err;
+        }
+      }
       console.log('Video data response:', response.data);
       const video = response.data.data;
       console.log('Video data set:', video);
@@ -156,15 +199,49 @@ const VideoPlayer = () => {
       if (video.progress) {
         console.log('Progress data found:', video.progress);
         setNotes(video.progress.notes || '');
-        setCurrentProgress(video.progress.watchPercentage || 0);
-        setIsCompleted(video.progress.isCompleted || false);
-        setWatchedSegments(mergeSegments(video.progress.watchedSegments || []));
-        setMaxWatchedTime(video.progress.watchedDuration || 0);
+        const sanitized = mergeSegments(clampSegmentsToDuration(video.progress.watchedSegments || [], video.duration || duration));
+        // compute progress from sanitized segments only
+        const totalWatched = sanitized.reduce((sum, s) => sum + (s.end - s.start), 0);
+        const pct = (totalWatched / (video.duration || duration || 1)) * 100;
+        setCurrentProgress(Math.min(Math.max(pct, 0), 100));
+        setIsCompleted(pct >= 90);
+        setWatchedSegments(sanitized);
+        setMaxWatchedTime(totalWatched);
         
         // If video is completed, ensure it stays completed
         if (video.progress.isCompleted) {
           console.log('Video is already completed, maintaining completion status');
         }
+      }
+      
+      // Immediately and permanently mark this video as watched on enter/preview
+      // This ensures the sidebar shows a persistent tick and unlocks the next video
+      try {
+        const alreadyCompleted = Boolean(video?.progress?.isCompleted);
+        const alreadyMarked = Boolean(hasMarkedOnEnterRef.current[videoId]);
+        const dur = Number(video?.duration || 0);
+        if (!alreadyMarked && dur > 0 && !alreadyCompleted) {
+          hasMarkedOnEnterRef.current[videoId] = true;
+          const payload = {
+            watchDuration: dur,
+            totalDuration: dur,
+            watchPercentage: 100,
+            watchedSegments: [{ start: 0, end: dur }]
+          };
+          console.log('Marking video as watched immediately on enter:', payload);
+          const completeResp = await axios.put(`/api/progress/video/${videoId}`, payload);
+          const serverProgress = completeResp?.data?.progress;
+          if (serverProgress) {
+            setIsCompleted(Boolean(serverProgress.isCompleted));
+            setCurrentProgress(Number(serverProgress.watchPercentage || 100));
+            setWatchedSegments([{ start: 0, end: dur }]);
+            setMaxWatchedTime(dur);
+            // trigger sidebar to refetch and reflect tick + next unlock
+            setProgressVersion(v => v + 1);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to mark video watched on enter:', e);
       }
       
       // Fetch course data to determine next video
@@ -192,9 +269,9 @@ const VideoPlayer = () => {
       });
 
       // Use the maximum of current progress or previously watched time
-      const finalWatchedTime = totalWatchedTime; // do not use max current time
-      const calculatedPercentage = (finalWatchedTime / duration) * 100;
-      const watchPercentage = Math.min(calculatedPercentage, 100); // Cap at 100%
+      const finalWatchedTime = Math.min(totalWatchedTime, duration); // never exceed duration
+      const calculatedPercentage = duration > 0 ? (finalWatchedTime / duration) * 100 : 0;
+      const watchPercentage = Math.max(0, Math.min(calculatedPercentage, 100)); // Clamp [0,100]
 
       const progressData = {
         watchDuration: finalWatchedTime,
@@ -209,11 +286,15 @@ const VideoPlayer = () => {
       
       if (response.data.progress) {
         const isNowCompleted = response.data.progress.isCompleted || false;
+        const wasCompleted = isCompleted;
         
         // Update progress state with server response
         setCurrentProgress(response.data.progress.watchPercentage || 0);
         setIsCompleted(isNowCompleted);
         setMaxWatchedTime(finalWatchedTime);
+        if (!wasCompleted && isNowCompleted) {
+          setProgressVersion(v => v + 1);
+        }
         
         // Optionally show a completion notification here if desired
       }
@@ -266,7 +347,7 @@ const VideoPlayer = () => {
       const combined = getAllWatchedForCalc();
       let combinedWatched = 0;
       combined.forEach(seg => { combinedWatched += (seg.end - seg.start); });
-      const calculatedPercentage = (combinedWatched / duration) * 100;
+      const calculatedPercentage = duration > 0 ? (combinedWatched / duration) * 100 : 0;
       const progressPercentage = Math.min(calculatedPercentage, 100); // Cap at 100%
       setCurrentProgress(progressPercentage);
 
@@ -331,6 +412,24 @@ const VideoPlayer = () => {
   const handleVideoSeeked = (event) => {
     // Reset session start to the new time; do not count skipped time as watched
     sessionStartRef.current = event.target.currentTime;
+  };
+
+  // Explicitly finalize then go to next video (ensures backend has updated completion)
+  const handleGoToNext = async () => {
+    if (currentWatchSegment && currentWatchSegment.end > currentWatchSegment.start) {
+      await new Promise(resolve => {
+        setWatchedSegments(prev => {
+          const merged = mergeSegments([...prev, { start: currentWatchSegment.start, end: currentWatchSegment.end }]);
+          resolve();
+          return merged;
+        });
+      });
+      setCurrentWatchSegment(null);
+    }
+    await saveProgress();
+    if (nextVideo) {
+      navigate(`/video/${nextVideo.id}`);
+    }
   };
 
   // Tab visibility and window focus control - pause video when tab is not visible or window loses focus
@@ -418,6 +517,7 @@ const VideoPlayer = () => {
       <CourseSidebar 
         courseData={courseData} 
         currentVideoId={videoId}
+        refreshKey={progressVersion}
         onVideoSelect={(video) => navigate(`/video/${video.id}`)}
       />
       
@@ -521,7 +621,7 @@ const VideoPlayer = () => {
                 size="large"
                 startIcon={<NextIcon />}
                 disabled={!isCompleted}
-                onClick={() => navigate(`/video/${nextVideo.id}`)}
+                onClick={handleGoToNext}
                 sx={{
                   px: 4,
                   py: 1.5,
@@ -605,7 +705,7 @@ const VideoPlayer = () => {
               <Typography variant="body2" color="textSecondary">
                 Current Time: {formatTime(currentTime)} | 
                 Duration: {formatTime(duration)} | 
-                Watched: {formatTime(currentTime)} | 
+                Watched: {formatTime(getAllWatchedForCalc().reduce((sum, s) => sum + (s.end - s.start), 0))} | 
                 Progress: {typeof currentProgress === 'number' ? currentProgress.toFixed(1) : '0.0'}%
               </Typography>
               {isWatching && (

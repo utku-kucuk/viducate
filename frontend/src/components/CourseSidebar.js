@@ -11,28 +11,48 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
-  Chip,
   CircularProgress,
-  IconButton,
-  Collapse
+  IconButton
 } from '@mui/material';
 import {
   ExpandMore as ExpandMoreIcon,
   PlayArrow as PlayIcon,
-  CheckCircle as CheckIcon,
+  CheckBoxOutlineBlank as CheckBoxOutlineBlankIcon,
+  CheckBox as CheckBoxIcon,
   Lock as LockIcon,
   VideoLibrary as VideoIcon,
   Menu as MenuIcon
 } from '@mui/icons-material';
 import axios from 'axios';
 
-const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect }) => {
+const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }) => {
   const navigate = useNavigate();
   const { courseId } = useParams();
   const [expandedChapters, setExpandedChapters] = useState({});
   const [videoProgress, setVideoProgress] = useState({});
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [placeholderToRealId, setPlaceholderToRealId] = useState({});
+
+  // Map chapter video to real stored video id
+  const resolveVideoId = (chapterVideo) => {
+    if (!courseData || !Array.isArray(courseData.videos)) return undefined;
+    const validIds = new Set(courseData.videos.map(v => v.id));
+    if (chapterVideo?.id && validIds.has(chapterVideo.id)) return chapterVideo.id;
+    if (chapterVideo?.title) {
+      const byTitle = courseData.videos.find(v => v.title === chapterVideo.title);
+      if (byTitle) return byTitle.id;
+    }
+    if (chapterVideo?.fileName) {
+      const byFile = courseData.videos.find(v => typeof v.fileUrl === 'string' && v.fileUrl.endsWith(`/${chapterVideo.fileName}`));
+      if (byFile) return byFile.id;
+    }
+    if (typeof chapterVideo?.order === 'number') {
+      const byOrder = courseData.videos.find(v => v.order === chapterVideo.order);
+      if (byOrder) return byOrder.id;
+    }
+    return undefined;
+  };
 
   // Fetch video progress for all videos in the course
   useEffect(() => {
@@ -49,25 +69,34 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect }) => {
             chapter.sections.forEach(section => {
               if (section.videos && Array.isArray(section.videos)) {
                 section.videos.forEach(video => {
-                  allVideos.push(video);
+                  const realId = resolveVideoId(video);
+                  if (realId) {
+                    allVideos.push({ placeholder: video, realId });
+                  }
                 });
               }
             });
           }
         });
+        // store mapping for render-time resolution
+        const map = {};
+        allVideos.forEach(({ placeholder, realId }) => {
+          map[placeholder.id || placeholder.title || realId] = realId;
+        });
+        setPlaceholderToRealId(map);
 
         // Fetch progress for all videos
-        const progressPromises = allVideos.map(async (video) => {
+        const progressPromises = allVideos.map(async ({ placeholder, realId }) => {
           try {
-            const response = await axios.get(`/api/videos/${video.id}`);
+            const response = await axios.get(`/api/videos/${realId}`);
             return {
-              videoId: video.id,
+              videoId: realId,
               progress: response.data.data.progress
             };
           } catch (error) {
-            console.error(`Error fetching progress for video ${video.id}:`, error);
+            console.error(`Error fetching progress for video ${realId}:`, error);
             return {
-              videoId: video.id,
+              videoId: realId,
               progress: null
             };
           }
@@ -88,7 +117,7 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect }) => {
     };
 
     fetchVideoProgress();
-  }, [courseData]);
+  }, [courseData, currentVideoId, refreshKey]);
 
   // Auto-expand chapters containing the current video
   useEffect(() => {
@@ -119,14 +148,17 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect }) => {
 
   const handleVideoClick = (video) => {
     if (onVideoSelect) {
-      onVideoSelect(video);
+      const realId = resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id;
+      onVideoSelect({ ...video, id: realId });
     } else {
-      navigate(`/video/${video.id}`);
+      const realId = resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id;
+      navigate(`/video/${realId}`);
     }
   };
 
   const getVideoStatus = (video) => {
-    const progress = videoProgress[video.id];
+    const realId = resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id;
+    const progress = videoProgress[realId];
     if (!progress) return 'not-started';
     
     if (progress.isCompleted) return 'completed';
@@ -135,40 +167,41 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect }) => {
     return 'not-started';
   };
 
-  const isVideoLocked = (video, videoIndex, chapterIndex, sectionIndex) => {
-    // First video is never locked
-    if (chapterIndex === 0 && sectionIndex === 0 && videoIndex === 0) {
-      return false;
-    }
-
-    // Check if previous videos in the same section are completed
-    if (sectionIndex > 0) {
-      const currentChapter = courseData.chapters[chapterIndex];
-      const currentSection = currentChapter.sections[sectionIndex];
-      const previousSection = currentChapter.sections[sectionIndex - 1];
-      
-      if (previousSection && previousSection.videos) {
-        const hasIncompleteVideo = previousSection.videos.some(v => {
-          const status = getVideoStatus(v);
-          return status !== 'completed';
+  // Flatten course videos in UI order
+  const getAllVideosInOrder = () => {
+    const list = [];
+    if (!courseData?.chapters) return list;
+    courseData.chapters.forEach((chapter, ci) => {
+      chapter.sections?.forEach((section, si) => {
+        section.videos?.forEach((video, vi) => {
+          const realId = resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id;
+          list.push({ video: { ...video, id: realId }, ci, si, vi });
         });
-        if (hasIncompleteVideo) return true;
-      }
-    }
+      });
+    });
+    return list;
+  };
 
-    // Check if previous video in same section is completed
-    if (videoIndex > 0) {
-      const currentChapter = courseData.chapters[chapterIndex];
-      const currentSection = currentChapter.sections[sectionIndex];
-      const previousVideo = currentSection.videos[videoIndex - 1];
-      
-      if (previousVideo) {
-        const status = getVideoStatus(previousVideo);
-        if (status !== 'completed') return true;
+  const isVideoLocked = (video) => {
+    const all = getAllVideosInOrder();
+    if (all.length === 0) return true;
+    // find contiguous completed prefix length
+    let prefixCompleted = 0;
+    for (let i = 0; i < all.length; i++) {
+      const v = all[i].video;
+      const status = getVideoStatus(v);
+      if (status === 'completed') {
+        prefixCompleted++;
+        continue;
       }
+      break;
     }
-
-    return false;
+    const realId = resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id;
+    if (realId === currentVideoId) return false; // current video should always be interactive
+    const idx = all.findIndex(item => item.video.id === realId);
+    if (idx === -1) return true;
+    // Unlocked if already in the completed prefix, or is the immediate next video
+    return !(idx <= prefixCompleted);
   };
 
   const getVideoIcon = (video, isLocked) => {
@@ -179,11 +212,11 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect }) => {
     const status = getVideoStatus(video);
     switch (status) {
       case 'completed':
-        return <CheckIcon color="success" />;
+        return <CheckBoxIcon color="success" />; // persistent tick
       case 'in-progress':
-        return <PlayIcon color="primary" />;
+        return <CheckBoxOutlineBlankIcon color="action" />; // unlocked but not completed
       default:
-        return <VideoIcon color="action" />;
+        return <CheckBoxOutlineBlankIcon color="action" />; // next-up or unlocked
     }
   };
 
@@ -308,7 +341,7 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect }) => {
                     
                     <List dense>
                       {section.videos && section.videos.map((video, videoIndex) => {
-                        const isLocked = isVideoLocked(video, videoIndex, chapterIndex, sectionIndex);
+                        const isLocked = isVideoLocked(video);
                         const isCurrent = video.id === currentVideoId;
                         const status = getVideoStatus(video);
                         

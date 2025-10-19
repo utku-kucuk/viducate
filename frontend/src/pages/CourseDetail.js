@@ -37,6 +37,7 @@ const CourseDetail = () => {
   const [error, setError] = useState(null);
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [isTeacher, setIsTeacher] = useState(false);
+  const [flatVideos, setFlatVideos] = useState([]);
 
   // Resolve a real video id from chapter video data produced at course creation
   const resolveVideoId = (chapterVideo) => {
@@ -90,9 +91,28 @@ const CourseDetail = () => {
         user?.role === 'student' ? axios.get(`/api/progress/course/${courseId}`) : Promise.resolve({ data: { data: [] } })
       ]);
 
-      setCourse(courseResponse.data.data);
+      const courseData = courseResponse.data.data;
+      setCourse(courseData);
       setIsEnrolled(courseResponse.data.data.isEnrolled);
       setIsTeacher(user?.role === 'teacher' && courseResponse.data.data.teacherId === user.id);
+      // Build flattened video order for locking logic
+      const allVideos = [];
+      if (courseData?.chapters && Array.isArray(courseData.chapters)) {
+        courseData.chapters.forEach(chapter => {
+          if (chapter.sections && Array.isArray(chapter.sections)) {
+            chapter.sections.forEach(section => {
+              if (section.videos && Array.isArray(section.videos)) {
+                section.videos.forEach(video => {
+                  allVideos.push(video);
+                });
+              }
+            });
+          }
+        });
+      }
+      // sort by order if available
+      allVideos.sort((a, b) => (a.order || 0) - (b.order || 0));
+      setFlatVideos(allVideos);
       
       if (progressResponse.data.data) {
         const progressMap = {};
@@ -111,6 +131,25 @@ const CourseDetail = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const isVideoUnlocked = (videoId) => {
+    if (isTeacher) return true;
+    if (!flatVideos.length) return false;
+    let prefixCompleted = 0;
+    for (let i = 0; i < flatVideos.length; i++) {
+      const v = flatVideos[i];
+      const p = userProgress[v.id];
+      const completed = !!(p?.isCompleted || (p?.watchPercentage >= 90));
+      if (completed) {
+        prefixCompleted++;
+      } else {
+        break;
+      }
+    }
+    const index = flatVideos.findIndex(v => v.id === videoId);
+    if (index === -1) return false;
+    return index <= prefixCompleted;
   };
 
 
@@ -373,8 +412,8 @@ const CourseDetail = () => {
                                             variant="contained"
                                             size="small"
                                             startIcon={<PlayIcon />}
-                                            disabled={!resolvedVideoId || (!isEnrolled && !isTeacher)}
-                                            title={!canWatch ? 'Complete previous content first' : ''}
+                                            disabled={!resolvedVideoId || (!isEnrolled || !isVideoUnlocked(resolvedVideoId))}
+                                            title={!isVideoUnlocked(resolvedVideoId) ? 'Complete previous videos to unlock' : ''}
                                           >
                                             {isWatched ? 'Continue' : 'Start'}
                                           </Button>

@@ -21,7 +21,8 @@ import {
   Person as PersonIcon,
   Logout as LogoutIcon,
   AdminPanelSettings as AdminIcon,
-  Book as BookIcon
+  Book as BookIcon,
+  LibraryBooks as LibraryBooksIcon
 } from '@mui/icons-material';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -157,6 +158,7 @@ const Navbar = () => {
                 component={Link}
                 to="/courses"
                 color="inherit"
+                startIcon={<BookIcon />}
                 sx={{ textTransform: 'none' }}
               >
                 Courses
@@ -170,7 +172,7 @@ const Navbar = () => {
                       <Button
                         onClick={handleMyLearningClick}
                         color="inherit"
-                        startIcon={<BookIcon />}
+                        startIcon={<LibraryBooksIcon />}
                         sx={{ textTransform: 'none' }}
                       >
                         My Learning
@@ -240,7 +242,7 @@ const Navbar = () => {
                         Teacher Dashboard
                       </MenuItem>
                       <MenuItem onClick={handleMyLearningClick}>
-                        <BookIcon sx={{ mr: 1 }} />
+                        <LibraryBooksIcon sx={{ mr: 1 }} />
                         My Learning
                       </MenuItem>
                       <Divider />
@@ -279,9 +281,10 @@ const Navbar = () => {
                       <Divider />
                     </>
                   )}
-                  <MenuItem component={Link} to="/courses" onClick={handleMenuClose}>
-                    Courses
-                  </MenuItem>
+                <MenuItem component={Link} to="/courses" onClick={handleMenuClose}>
+                  <BookIcon sx={{ mr: 1 }} />
+                  Courses
+                </MenuItem>
                   <MenuItem onClick={handleProfileClick}>
                     <PersonIcon sx={{ mr: 1 }} />
                     Profile
@@ -312,7 +315,7 @@ const Navbar = () => {
                       Teacher Dashboard
                     </MenuItem>
                     <MenuItem onClick={handleMyLearningClick}>
-                      <BookIcon sx={{ mr: 1 }} />
+                      <LibraryBooksIcon sx={{ mr: 1 }} />
                       My Learning
                     </MenuItem>
                   </Menu>
