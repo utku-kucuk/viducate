@@ -14,7 +14,6 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  Rating,
   Stack,
   CircularProgress,
   Alert

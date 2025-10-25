@@ -13,7 +13,6 @@ import {
 } from '@mui/material';
 import {
   PlayCircle as PlayIcon,
-  School as SchoolIcon,
   TrendingUp as TrendingIcon,
   Group as GroupIcon,
   Security as SecurityIcon,

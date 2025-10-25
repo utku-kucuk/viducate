@@ -14,7 +14,6 @@ import {
 } from '@mui/material';
 import {
   PlayCircle as PlayIcon,
-  TrendingUp as TrendingIcon,
   Schedule as ScheduleIcon,
   CheckCircle as CheckIcon,
   School as SchoolIcon
@@ -68,7 +67,7 @@ const Dashboard = () => {
           const videosWithProgress = progressResponse.data.data || [];
           
           let courseProgress = 0;
-          videosWithProgress.forEach(video => {
+          for (const video of videosWithProgress) {
             if (video.Progress && video.Progress.length > 0) {
               const progress = video.Progress[0];
               if (progress.isCompleted) {
@@ -77,7 +76,7 @@ const Dashboard = () => {
               totalWatchTime += (progress.watchDuration || 0) / 3600; // Convert to hours
               courseProgress += progress.watchPercentage || 0;
             }
-          });
+          }
 
           // Calculate average progress for this course
           if (course.videos && course.videos.length > 0) {

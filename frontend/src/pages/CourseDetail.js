@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Container,
   Typography,
@@ -72,11 +72,7 @@ const CourseDetail = () => {
     return undefined;
   };
 
-  useEffect(() => {
-    fetchCourseData();
-  }, [courseId, user]);
-
-  const fetchCourseData = async () => {
+  const fetchCourseData = useCallback(async () => {
     try {
       setLoading(true);
       
@@ -131,7 +127,11 @@ const CourseDetail = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [courseId, user]);
+
+  useEffect(() => {
+    fetchCourseData();
+  }, [fetchCourseData]);
 
   const isVideoUnlocked = (videoId) => {
     if (isTeacher) return true;
@@ -177,12 +177,7 @@ const CourseDetail = () => {
     }
   };
 
-  const formatDuration = (seconds) => {
-    if (!seconds) return '0:00';
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-  };
+  // formatDuration removed (unused)
 
   if (loading) {
     return (
@@ -337,18 +332,7 @@ const CourseDetail = () => {
                                     const resolvedVideoId = resolveVideoId(video);
                                     const progress = userProgress[resolvedVideoId || video.id];
                                     const isCompleted = progress?.isCompleted;
-                                    const isWatched = progress?.watchPercentage > 0;
-                                    const canWatch = (chapterIndex === 0 && sectionIndex === 0) || 
-                                      (chapterIndex > 0 && course.chapters[chapterIndex - 1]?.sections?.every(s => 
-                                        s.videos?.every(v => {
-                                          const vId = resolveVideoId(v);
-                                          return userProgress[vId || v.id]?.isCompleted;
-                                        })
-                                      )) ||
-                                      (sectionIndex > 0 && chapter.sections[sectionIndex - 1]?.videos?.every(v => {
-                                        const vId = resolveVideoId(v);
-                                        return userProgress[vId || v.id]?.isCompleted;
-                                      }));
+                                  const isWatched = progress?.watchPercentage > 0;
 
                                     return (
                                       <React.Fragment key={resolvedVideoId || video.id || `video-${videoIndex}`}>
