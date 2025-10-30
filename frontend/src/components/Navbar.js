@@ -166,7 +166,6 @@ const Navbar = () => {
                   >
                     Courses
                   </Button>
-                <>
                   {getDashboardButton()}
                   <Button
                     component={Link}
