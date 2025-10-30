@@ -320,7 +320,7 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }
         <Box sx={{ p: 1 }}>
           {courseData.chapters && courseData.chapters.map((chapter, chapterIndex) => (
             <Accordion
-              key={chapter.id}
+              key={chapter?.id || `chapter-${chapterIndex}`}
               expanded={expandedChapters[chapter.id] || false}
               onChange={() => handleChapterToggle(chapter.id)}
               sx={{ mb: 1, boxShadow: 'none' }}
@@ -339,7 +339,7 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }
               
               <AccordionDetails sx={{ p: 0 }}>
                 {chapter.sections && chapter.sections.map((section, sectionIndex) => (
-                  <Box key={section.id} sx={{ mb: 1 }}>
+                  <Box key={section?.id || `section-${chapterIndex}-${sectionIndex}` } sx={{ mb: 1 }}>
                     <Typography 
                       variant="body2" 
                       color="textSecondary" 
@@ -354,8 +354,9 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }
                         const isCurrent = video.id === currentVideoId;
                         const status = getVideoStatus(video);
                         
+                        const keyId = video?.id || `${chapterIndex}-${sectionIndex}-${videoIndex}`;
                         return (
-                          <ListItem key={video.id} disablePadding>
+                          <ListItem key={keyId} disablePadding>
                             <ListItemButton
                               onClick={() => !isLocked && handleVideoClick(video)}
                               disabled={isLocked}

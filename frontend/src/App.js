@@ -18,6 +18,7 @@ import TeacherDashboard from './pages/TeacherDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import Profile from './pages/Profile';
 import CreateCourse from './pages/CreateCourse';
+import Notes from './pages/Notes';
 
 function App() {
   return (
@@ -30,8 +31,16 @@ function App() {
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
-            <Route path="/courses" element={<CourseList />} />
-            <Route path="/course/:id" element={<CourseDetail />} />
+            <Route path="/courses" element={
+              <PrivateRoute>
+                <CourseList />
+              </PrivateRoute>
+            } />
+            <Route path="/course/:id" element={
+              <PrivateRoute>
+                <CourseDetail />
+              </PrivateRoute>
+            } />
             
             {/* Protected routes */}
             <Route path="/dashboard" element={
@@ -62,6 +71,11 @@ function App() {
             <Route path="/profile" element={
               <PrivateRoute>
                 <Profile />
+              </PrivateRoute>
+            } />
+            <Route path="/notes" element={
+              <PrivateRoute>
+                <Notes />
               </PrivateRoute>
             } />
             <Route path="/video/:videoId" element={

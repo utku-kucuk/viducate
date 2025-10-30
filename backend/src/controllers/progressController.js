@@ -1,4 +1,4 @@
-const { Progress, Video, User } = require('../models');
+const { Progress, Video, User, Course } = require('../models');
 
 // Calculate engagement score (0-100)
 function calculateEngagementScore(progress) {
@@ -290,7 +290,14 @@ const getUserProgress = async (req, res) => {
         {
           model: Video,
           as: 'video',
-          attributes: ['id', 'title', 'duration', 'fileUrl']
+          attributes: ['id', 'title', 'duration', 'fileUrl', 'courseId'],
+          include: [
+            {
+              model: Course,
+              as: 'course',
+              attributes: ['id', 'title']
+            }
+          ]
         }
       ],
       order: [['lastWatchedAt', 'DESC']]
@@ -427,11 +434,55 @@ const addWatchSession = async (req, res) => {
   }
 };
 
+// Update notes only (creates minimal progress if missing)
+const updateNotes = async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    const { notes } = req.body || {};
+    const userId = req.user.id;
+
+    if (typeof notes !== 'string') {
+      return res.status(400).json({ error: 'Notes must be a string.' });
+    }
+
+    let progress = await Progress.findOne({ where: { userId, videoId } });
+
+    if (!progress) {
+      // Create a minimal valid progress row to store notes
+      progress = await Progress.create({
+        userId,
+        videoId,
+        watchedDuration: 0,
+        totalDuration: 1, // minimal positive per model validation
+        watchPercentage: 0,
+        notes,
+        lastWatchedAt: new Date()
+      });
+    } else {
+      await progress.update({ notes, lastWatchedAt: new Date() });
+    }
+
+    return res.json({
+      message: 'Notes updated successfully',
+      progress: {
+        id: progress.id,
+        videoId: progress.videoId,
+        notes: progress.notes,
+        lastWatchedAt: progress.lastWatchedAt
+      }
+    });
+  } catch (error) {
+    console.error('Update notes error:', error);
+    return res.status(500).json({ error: 'Failed to update notes.' });
+  }
+};
+
 module.exports = {
   updateProgress,
   getVideoProgress,
   getUserProgress,
   getCourseProgress,
   getStudentProgress,
-  addWatchSession
+  addWatchSession,
+  updateNotes
 };

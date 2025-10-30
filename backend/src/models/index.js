@@ -3,6 +3,7 @@ const Course = require('./Course');
 const Video = require('./Video');
 const Progress = require('./Progress');
 const UserCourse = require('./UserCourse');
+const Note = require('./Note');
 
 // User - Course relationships (Teacher creates courses)
 User.hasMany(Course, { 
@@ -101,10 +102,15 @@ Course.hasMany(UserCourse, {
   onDelete: 'CASCADE'
 });
 
+// User - Note relationship
+User.hasMany(Note, { foreignKey: 'userId', as: 'notes' });
+Note.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
 module.exports = {
   User,
   Course,
   Video,
   Progress,
   UserCourse
+  , Note
 };

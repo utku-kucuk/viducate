@@ -8,7 +8,9 @@ import {
   TextField,
   Chip,
   Alert,
-  Paper
+  Paper,
+  Snackbar,
+  Alert as MuiAlert
 } from '@mui/material';
 import { 
   ArrowBack,
@@ -58,6 +60,10 @@ const VideoPlayer = () => {
   const [notes, setNotes] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
   const [currentProgress, setCurrentProgress] = useState(0);
+  const [autoSaveNotes, setAutoSaveNotes] = useState(true);
+  const [isEditingNotes, setIsEditingNotes] = useState(true);
+  const [lastNotesSavedAt, setLastNotesSavedAt] = useState(null);
+  const [notesSavedOpen, setNotesSavedOpen] = useState(false);
 
   // Helper function to format time
   const formatTime = (seconds) => {
@@ -295,11 +301,12 @@ const VideoPlayer = () => {
 
     try {
       setSavingNotes(true);
-      await axios.put(`/api/progress/video/${videoId}`, { notes });
-      alert('Notes saved successfully!');
+      await axios.put(`/api/progress/video/${videoId}/notes`, { notes });
+      setLastNotesSavedAt(new Date());
+      setNotesSavedOpen(true);
+      // Do not alert on success to avoid interrupting UX
     } catch (err) {
       console.error('Error saving notes:', err);
-      alert('Failed to save notes. Please try again.');
     } finally {
       setSavingNotes(false);
     }
@@ -467,6 +474,17 @@ const VideoPlayer = () => {
     fetchVideoData();
   }, [videoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Auto-save notes with debounce when enabled
+  useEffect(() => {
+    if (!autoSaveNotes) return;
+    if (!videoData) return;
+    const handler = setTimeout(() => {
+      if (notes !== undefined) {
+        saveNotes();
+      }
+    }, 1200);
+    return () => clearTimeout(handler);
+  }, [notes, autoSaveNotes, videoData]);
 
 
   if (loading) {
@@ -803,27 +821,65 @@ const VideoPlayer = () => {
 
           {/* Notes Section */}
           <Paper sx={{ p: 2 }}>
-            <Typography variant="h6" gutterBottom>
-              Notes
-            </Typography>
-            <TextField
-              fullWidth
-              multiline
-              rows={4}
-              variant="outlined"
-              placeholder="Add your notes here..."
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              sx={{ mb: 2 }}
-            />
-            <Button
-              variant="contained"
-              onClick={saveNotes}
-              disabled={savingNotes}
-            >
-              {savingNotes ? 'Saving...' : 'Save Notes'}
-            </Button>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+              <Typography variant="h6" gutterBottom sx={{ mb: 0 }}>
+                Notes
+              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Typography variant="caption" color="textSecondary">
+                  {lastNotesSavedAt ? `Last saved: ${new Date(lastNotesSavedAt).toLocaleString()}` : 'Not saved yet'}
+                </Typography>
+                <Button size="small" variant="outlined" onClick={() => setIsEditingNotes(v => !v)}>
+                  {isEditingNotes ? 'View' : 'Edit'}
+                </Button>
+                <Chip 
+                  label={autoSaveNotes ? 'Auto Save: On' : 'Auto Save: Off'}
+                  color={autoSaveNotes ? 'success' : 'default'}
+                  onClick={() => setAutoSaveNotes(v => !v)}
+                  variant={autoSaveNotes ? 'filled' : 'outlined'}
+                  sx={{ cursor: 'pointer' }}
+                />
+              </Box>
+            </Box>
+
+            {isEditingNotes ? (
+              <>
+                <TextField
+                  fullWidth
+                  multiline
+                  rows={4}
+                  variant="outlined"
+                  placeholder="Add your notes here..."
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  sx={{ mb: 2 }}
+                />
+                <Button
+                  variant="contained"
+                  onClick={saveNotes}
+                  disabled={savingNotes}
+                >
+                  {savingNotes ? 'Saving...' : 'Save Notes'}
+                </Button>
+              </>
+            ) : (
+              <Box sx={{ p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+                <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                  {notes || 'No notes yet.'}
+                </Typography>
+              </Box>
+            )}
           </Paper>
+          <Snackbar
+            open={notesSavedOpen}
+            autoHideDuration={2000}
+            onClose={() => setNotesSavedOpen(false)}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+          >
+            <MuiAlert elevation={6} variant="filled" severity="success" sx={{ width: '100%' }}>
+              Notes saved
+            </MuiAlert>
+          </Snackbar>
         </Box>
         </Box>
         </Container>

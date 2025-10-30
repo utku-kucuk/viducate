@@ -22,7 +22,8 @@ import {
   Logout as LogoutIcon,
   AdminPanelSettings as AdminIcon,
   Book as BookIcon,
-  LibraryBooks as LibraryBooksIcon
+  LibraryBooks as LibraryBooksIcon,
+  Notes as NotesIcon
 } from '@mui/icons-material';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -154,18 +155,28 @@ const Navbar = () => {
           {/* Desktop Navigation */}
           {!isMobile && (
             <Box sx={{ flexGrow: 1, display: 'flex', gap: 2 }}>
-              <Button
-                component={Link}
-                to="/courses"
-                color="inherit"
-                startIcon={<BookIcon />}
-                sx={{ textTransform: 'none' }}
-              >
-                Courses
-              </Button>
               {isAuthenticated && (
                 <>
+                  <Button
+                    component={Link}
+                    to="/courses"
+                    color="inherit"
+                    startIcon={<BookIcon />}
+                    sx={{ textTransform: 'none' }}
+                  >
+                    Courses
+                  </Button>
+                <>
                   {getDashboardButton()}
+                  <Button
+                    component={Link}
+                    to="/notes"
+                    color="inherit"
+                    startIcon={<NotesIcon />}
+                    sx={{ textTransform: 'none' }}
+                  >
+                    My Notes
+                  </Button>
                   {user?.role === 'teacher' && (
                     <>
                       <Divider orientation="vertical" flexItem />
@@ -281,10 +292,18 @@ const Navbar = () => {
                       <Divider />
                     </>
                   )}
-                <MenuItem component={Link} to="/courses" onClick={handleMenuClose}>
-                  <BookIcon sx={{ mr: 1 }} />
-                  Courses
-                </MenuItem>
+                {isAuthenticated && (
+                  <MenuItem component={Link} to="/courses" onClick={handleMenuClose}>
+                    <BookIcon sx={{ mr: 1 }} />
+                    Courses
+                  </MenuItem>
+                )}
+                {isAuthenticated && (
+                  <MenuItem component={Link} to="/notes" onClick={handleMenuClose}>
+                    <NotesIcon sx={{ mr: 1 }} />
+                    My Notes
+                  </MenuItem>
+                )}
                   <MenuItem onClick={handleProfileClick}>
                     <PersonIcon sx={{ mr: 1 }} />
                     Profile

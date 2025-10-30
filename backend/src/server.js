@@ -11,6 +11,7 @@ const courseRoutes = require('./routes/courses');
 const videoRoutes = require('./routes/videos');
 const progressRoutes = require('./routes/progress');
 const adminRoutes = require('./routes/admin');
+const notesRoutes = require('./routes/notes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -115,6 +116,7 @@ app.use('/api/courses', courseRoutes);
 app.use('/api/videos', videoRoutes);
 app.use('/api/progress', progressRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/notes', notesRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
