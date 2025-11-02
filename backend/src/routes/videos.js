@@ -5,7 +5,7 @@ const { body } = require('express-validator');
 const { validate } = require('../middleware/validation');
 const multer = require('multer');
 const path = require('path');
-const { Video, User, Progress } = require('../models');
+const { Video, User, Progress, Course } = require('../models');
 const videoController = require('../controllers/videoController');
 
 // Configure multer for video uploads
@@ -44,7 +44,20 @@ router.post('/upload', auth, requireTeacher, upload.single('video'), async (req,
       });
     }
 
-    const { title, description, duration, order } = req.body;
+    const { title, description, duration, order, isPublished } = req.body;
+    let resolvedIsPublished = undefined;
+    if (typeof isPublished !== 'undefined') {
+      resolvedIsPublished = (typeof isPublished === 'string') ? (isPublished === 'true') : Boolean(isPublished);
+    } else if (req.body.courseId) {
+      try {
+        const parentCourse = await Course.findByPk(req.body.courseId);
+        if (parentCourse) {
+          resolvedIsPublished = Boolean(parentCourse.isPublished);
+        }
+      } catch (e) {
+        resolvedIsPublished = undefined;
+      }
+    }
     
     // Create video record in database
     const video = await Video.create({
@@ -56,7 +69,7 @@ router.post('/upload', auth, requireTeacher, upload.single('video'), async (req,
       fileSize: req.file.size,
       teacherId: req.user.id,
       courseId: req.body.courseId || null,
-      isPublished: true
+      isPublished: typeof resolvedIsPublished === 'boolean' ? resolvedIsPublished : false
     });
 
     res.status(201).json({

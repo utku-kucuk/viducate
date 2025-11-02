@@ -177,6 +177,7 @@ const VideoUpload = ({ courseId, onVideoUploaded }) => {
           sx={{ mb: 2 }}
           disabled={uploading}
         />
+        {/* Only course publish is controlled at course level */}
       </Box>
 
 

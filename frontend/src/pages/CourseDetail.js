@@ -33,6 +33,7 @@ const CourseDetail = () => {
   
   const [course, setCourse] = useState(null);
   const [userProgress, setUserProgress] = useState({});
+  const [lastWatchedVideoId, setLastWatchedVideoId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isEnrolled, setIsEnrolled] = useState(false);
@@ -82,14 +83,21 @@ const CourseDetail = () => {
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       }
       
-      const [courseResponse, progressResponse] = await Promise.all([
+      const [courseResponse, progressResponse, enrolledResp] = await Promise.all([
         axios.get(`/api/courses/${courseId}`),
-        user?.role === 'student' ? axios.get(`/api/progress/course/${courseId}`) : Promise.resolve({ data: { data: [] } })
+        user?.role === 'student' ? axios.get(`/api/progress/course/${courseId}`) : Promise.resolve({ data: { data: [] } }),
+        user?.role === 'student' ? axios.get('/api/courses/enrolled') : Promise.resolve({ data: { data: [] } })
       ]);
 
       const courseData = courseResponse.data.data;
       setCourse(courseData);
-      setIsEnrolled(courseResponse.data.data.isEnrolled);
+      // Derive enrollment robustly: prefer server field; fallback to enrolled list
+      const serverIsEnrolled = Boolean(courseResponse.data.data.isEnrolled);
+      let clientIsEnrolled = serverIsEnrolled;
+      if (!serverIsEnrolled && enrolledResp?.data?.data) {
+        clientIsEnrolled = Array.isArray(enrolledResp.data.data) && enrolledResp.data.data.some(c => c.id === courseId);
+      }
+      setIsEnrolled(clientIsEnrolled);
       setIsTeacher(user?.role === 'teacher' && courseResponse.data.data.teacherId === user.id);
       // Build flattened video order for locking logic
       const allVideos = [];
@@ -110,12 +118,21 @@ const CourseDetail = () => {
       allVideos.sort((a, b) => (a.order || 0) - (b.order || 0));
       setFlatVideos(allVideos);
       
-      if (progressResponse.data.data) {
+      const courseProgressList = progressResponse?.data?.progress || progressResponse?.data?.data || [];
+      if (Array.isArray(courseProgressList)) {
         const progressMap = {};
-        progressResponse.data.data.forEach(progress => {
-          progressMap[progress.videoId] = progress;
+        let latestVideoId = null;
+        let latestTime = 0;
+        courseProgressList.forEach(p => {
+          progressMap[p.videoId] = p;
+          const ts = p.lastWatchedAt ? new Date(p.lastWatchedAt).getTime() : 0;
+          if (ts > latestTime) {
+            latestTime = ts;
+            latestVideoId = p.videoId;
+          }
         });
         setUserProgress(progressMap);
+        setLastWatchedVideoId(latestVideoId);
       }
     } catch (error) {
       console.error('Error fetching course data:', error);
@@ -135,6 +152,8 @@ const CourseDetail = () => {
 
   const isVideoUnlocked = (videoId) => {
     if (isTeacher) return true;
+    // Always allow resuming the last watched video
+    if (videoId && lastWatchedVideoId && videoId === lastWatchedVideoId) return true;
     if (!flatVideos.length) return false;
     let prefixCompleted = 0;
     for (let i = 0; i < flatVideos.length; i++) {
@@ -396,8 +415,8 @@ const CourseDetail = () => {
                                             variant="contained"
                                             size="small"
                                             startIcon={<PlayIcon />}
-                                            disabled={!resolvedVideoId || (!isEnrolled || !isVideoUnlocked(resolvedVideoId))}
-                                            title={!isVideoUnlocked(resolvedVideoId) ? 'Complete previous videos to unlock' : ''}
+                                            disabled={!resolvedVideoId || (!isTeacher && (!isEnrolled || !isVideoUnlocked(resolvedVideoId)))}
+                                            title={!isTeacher && !isVideoUnlocked(resolvedVideoId) ? 'Complete previous videos to unlock' : ''}
                                           >
                                             {isWatched ? 'Continue' : 'Start'}
                                           </Button>

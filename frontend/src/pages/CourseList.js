@@ -49,6 +49,10 @@ const CourseList = () => {
       setLoading(true);
       setError(null);
 
+      const token = localStorage.getItem('token');
+      if (token) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      }
       const response = await axios.get('/api/courses');
       const coursesData = response.data.data || [];
 

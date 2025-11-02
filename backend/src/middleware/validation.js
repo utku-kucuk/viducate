@@ -136,6 +136,10 @@ const validateProgress = [
     .optional()
     .isInt({ min: 1 })
     .withMessage('Play count must be a positive integer'),
+  body('bookmarkPosition')
+    .optional()
+    .isInt({ min: 0 })
+    .withMessage('Bookmark position must be a non-negative integer'),
   handleValidationErrors
 ];
 

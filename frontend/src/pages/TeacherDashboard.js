@@ -24,7 +24,9 @@ import {
   Snackbar,
   Tabs,
   Tab,
-  Avatar
+  Avatar,
+  FormControlLabel,
+  Switch
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -54,6 +56,10 @@ const TeacherDashboard = () => {
   // Fetch teacher's courses
   const fetchCourses = async () => {
     try {
+      const token = localStorage.getItem('token');
+      if (token) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      }
       const response = await axios.get('/api/courses/teacher/my-courses');
       setCourses(response.data.courses || []);
     } catch (error) {
@@ -62,9 +68,25 @@ const TeacherDashboard = () => {
     }
   };
 
+  const togglePublish = async (course) => {
+    try {
+      const nextVal = !course.isPublished;
+      await axios.put(`/api/courses/${course.id}`, { isPublished: nextVal });
+      setCourses(prev => prev.map(c => c.id === course.id ? { ...c, isPublished: nextVal, updatedAt: new Date().toISOString() } : c));
+      setSnackbar({ open: true, message: nextVal ? 'Course published' : 'Course unpublished', severity: 'success' });
+    } catch (error) {
+      console.error('Error updating course status:', error);
+      setSnackbar({ open: true, message: 'Failed to update course status', severity: 'error' });
+    }
+  };
+
   // Fetch students enrolled in teacher's courses
   const fetchStudents = async () => {
     try {
+      const token = localStorage.getItem('token');
+      if (token) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      }
       const response = await axios.get('/api/courses/teacher/students');
       setStudents(response.data.students || []);
     } catch (error) {
@@ -314,9 +336,17 @@ const TeacherDashboard = () => {
                             <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
                               {course.description?.substring(0, 80)}...
                             </Typography>
-                            <Box display="flex" gap={1}>
+                            <Box display="flex" gap={1} sx={{ mb: 1 }}>
                               <Chip label={course.category} size="small" color="primary" variant="outlined" />
                               <Chip label={course.level} size="small" color="secondary" variant="outlined" />
+                            </Box>
+                            <Box display="flex" gap={2}>
+                              <Typography variant="caption" color="textSecondary">
+                                Created: {course.createdAt ? new Date(course.createdAt).toLocaleString() : '-'}
+                              </Typography>
+                              <Typography variant="caption" color="textSecondary">
+                                Updated: {course.updatedAt ? new Date(course.updatedAt).toLocaleString() : '-'}
+                              </Typography>
                             </Box>
                           </Box>
                         </TableCell>
@@ -345,10 +375,15 @@ const TeacherDashboard = () => {
                           </Box>
                         </TableCell>
                         <TableCell>
-                          <Chip
+                          <FormControlLabel
+                            control={
+                              <Switch
+                                checked={!!course.isPublished}
+                                onChange={() => togglePublish(course)}
+                                color="success"
+                              />
+                            }
                             label={course.isPublished ? 'Published' : 'Draft'}
-                            color={course.isPublished ? 'success' : 'warning'}
-                            size="small"
                           />
                         </TableCell>
                         <TableCell>

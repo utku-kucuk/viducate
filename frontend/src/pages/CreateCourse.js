@@ -18,7 +18,9 @@ import {
   Chip,
   Accordion,
   AccordionSummary,
-  AccordionDetails
+  AccordionDetails,
+  FormControlLabel,
+  Switch
 } from '@mui/material';
 import {
   School as SchoolIcon,
@@ -28,7 +30,7 @@ import {
   ExpandMore as ExpandMoreIcon,
   CloudUpload as UploadIcon
 } from '@mui/icons-material';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, Link as RouterLink } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 
@@ -47,7 +49,8 @@ const CreateCourse = () => {
     title: '',
     description: '',
     category: '',
-    level: 'beginner'
+    level: 'beginner',
+    isPublished: false
   });
   const [chapters, setChapters] = useState([
     {
@@ -648,6 +651,12 @@ const CreateCourse = () => {
                   </Select>
                 </FormControl>
               </Grid>
+              <Grid item xs={12}>
+                <FormControlLabel
+                  control={<Switch checked={formData.isPublished} onChange={(e) => handleInputChange('isPublished', e.target.checked)} />}
+                  label="Publish course"
+                />
+              </Grid>
               
               <Grid item xs={12}>
                 <Typography variant="h6" sx={{ mb: 2 }}>
@@ -849,7 +858,7 @@ const CreateCourse = () => {
                                       </Button>
                                     </Grid>
                                     <Grid item xs={12} sm={4}>
-                                      <Box display="flex" gap={1}>
+                                      <Box display="flex" gap={1} alignItems="center">
                                         <IconButton
                                           size="small"
                                           color="error"
@@ -857,6 +866,7 @@ const CreateCourse = () => {
                                         >
                                           <DeleteIcon />
                                         </IconButton>
+                                        {/* Preview removed per request */}
                                       </Box>
                                     </Grid>
                                   </Grid>

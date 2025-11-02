@@ -5,7 +5,14 @@ const { validationResult } = require('express-validator');
 // Get all courses (for students)
 const getAllCourses = async (req, res) => {
   try {
+    const where = {};
+    // Only show published courses to non-teachers
+    if (!['teacher', 'admin'].includes(req.user.role)) {
+      where.isPublished = true;
+    }
+
     const courses = await Course.findAll({
+      where,
       include: [
         {
           model: User,
@@ -253,7 +260,7 @@ const createCourse = async (req, res) => {
       });
     }
 
-    const { title, description, category, level, chapters, thumbnail } = req.body;
+    const { title, description, category, level, chapters, thumbnail, isPublished } = req.body;
 
     // Create course first
     const course = await Course.create({
@@ -263,7 +270,8 @@ const createCourse = async (req, res) => {
       level,
       chapters: chapters || [],
       thumbnail: thumbnail || null,
-      teacherId: req.user.id
+      teacherId: req.user.id,
+      isPublished: typeof isPublished === 'boolean' ? isPublished : false
     });
 
     // Note: Videos will be uploaded separately via the video upload endpoint
@@ -288,7 +296,7 @@ const createCourse = async (req, res) => {
 const updateCourse = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, description, category, level, chapters, thumbnail } = req.body;
+    const { title, description, category, level, chapters, thumbnail, isPublished } = req.body;
 
     console.log('Updating course:', id, 'with data:', { title, description, category, level, chapters });
 
@@ -322,6 +330,7 @@ const updateCourse = async (req, res) => {
         });
       }
     }
+    if (isPublished !== undefined) updateData.isPublished = Boolean(isPublished);
 
     console.log('Update data:', updateData);
     
@@ -335,6 +344,18 @@ const updateCourse = async (req, res) => {
     }
     
     await course.update(updateData);
+
+    // If publish status changed, propagate to videos of this course
+    if (isPublished !== undefined) {
+      try {
+        await Video.update(
+          { isPublished: Boolean(isPublished) },
+          { where: { courseId: id } }
+        );
+      } catch (e) {
+        console.error('Failed to propagate video publish status:', e);
+      }
+    }
 
     res.json({
       success: true,
@@ -420,7 +441,7 @@ const getCourseById = async (req, res) => {
     const { id } = req.params;
     const userId = req.user.id;
 
-    const course = await Course.findByPk(id, {
+  const course = await Course.findByPk(id, {
       include: [
         {
           model: User,
@@ -451,7 +472,11 @@ const getCourseById = async (req, res) => {
     const isTeacher = course.teacherId === userId;
 
     // If user is not enrolled and not the teacher, return basic course info only
-    if (!isEnrolled && !isTeacher) {
+  if (!isEnrolled && !isTeacher) {
+      // Hide unpublished courses from non-enrolled non-teachers
+      if (!course.isPublished) {
+        return res.status(404).json({ success: false, message: 'Course not found' });
+      }
       const basicCourseInfo = {
         id: course.id,
         title: course.title,
