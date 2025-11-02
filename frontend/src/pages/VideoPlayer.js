@@ -221,11 +221,13 @@ const VideoPlayer = () => {
           const totalWatched = sanitized.reduce((sum, s) => sum + (s.end - s.start), 0);
           const pct = baseDuration > 0 ? (totalWatched / baseDuration) * 100 : 0;
           setCurrentProgress(Math.min(Math.max(pct, 0), 100));
-          setIsCompleted(Boolean(progress.isCompleted) || pct >= 90);
+          // CRITICAL: Trust server's isCompleted flag ONLY - no fallback to local percentage
+          // Server is the single source of truth for completion status
+          setIsCompleted(Boolean(progress.isCompleted));
           setWatchedSegments(sanitized);
           setMaxWatchedTime(totalWatched);
-          // Trigger sidebar refresh if server says completed and we haven't yet
-          if ((progress.isCompleted || pct >= 90) && videoId && !hasRefreshedSidebarForCompletionRef.current[videoId]) {
+          // Trigger sidebar refresh ONLY if server explicitly says completed
+          if (progress.isCompleted === true && videoId && !hasRefreshedSidebarForCompletionRef.current[videoId]) {
             hasRefreshedSidebarForCompletionRef.current[videoId] = true;
             setProgressVersion(v => v + 1);
           }
@@ -279,12 +281,14 @@ const VideoPlayer = () => {
         const serverCompleted = Boolean(response.data.progress.isCompleted);
 
         // Update progress state with server response
+        // CRITICAL: Trust server's isCompleted flag ONLY - no fallback to local percentage
+        // Server is the single source of truth for completion status
         setCurrentProgress(serverPct);
-        setIsCompleted(serverCompleted || serverPct >= 90);
+        setIsCompleted(serverCompleted); // Use server's isCompleted value directly, no fallback
         setMaxWatchedTime(finalWatchedTime);
 
-        // Ensure sidebar refreshes exactly once when server confirms completion
-        if ((serverCompleted || serverPct >= 90) && videoId && !hasRefreshedSidebarForCompletionRef.current[videoId]) {
+        // Ensure sidebar refreshes exactly once when server explicitly confirms completion
+        if (serverCompleted === true && videoId && !hasRefreshedSidebarForCompletionRef.current[videoId]) {
           hasRefreshedSidebarForCompletionRef.current[videoId] = true;
           setProgressVersion(v => v + 1);
         }
@@ -344,10 +348,11 @@ const VideoPlayer = () => {
       const progressPercentage = Math.min(calculatedPercentage, 100); // Cap at 100%
       setCurrentProgress(progressPercentage);
 
-      // Local completion gate at 90%
+      // Local completion gate at 90% - trigger save but don't set local state
+      // Server will set isCompleted flag, we'll update from server response
       if (!isCompleted && progressPercentage >= 90) {
-        setIsCompleted(true);
-        // Trigger an immediate save once the threshold is crossed so the sidebar ticks instantly
+        // Trigger save so server can update isCompleted flag
+        // Don't set local isCompleted here - wait for server response
         saveProgress();
       }
     }

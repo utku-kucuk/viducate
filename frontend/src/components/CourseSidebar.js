@@ -170,8 +170,10 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }
     const progress = videoProgress[realId];
     if (!progress) return 'not-started';
     
-    if (progress.isCompleted) return 'completed';
-    if (progress.watchPercentage >= 90) return 'completed';
+    // CRITICAL: Trust server's isCompleted flag ONLY - no fallback to watchPercentage
+    // Server is the single source of truth for completion status per COMPLETION_RULES.md
+    // watchPercentage >= 90 check removed to prevent false positives
+    if (progress.isCompleted === true) return 'completed';
     if (progress.watchPercentage > 0) return 'in-progress';
     return 'not-started';
   };
