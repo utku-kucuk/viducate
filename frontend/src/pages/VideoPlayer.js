@@ -859,72 +859,33 @@ const VideoPlayer = () => {
             </Box>
           </Paper>
 
-          {/* Next Video Section - gated by quiz if required */}
-          {isCompleted && (isTeacher || !quizInfo.hasQuiz || !quizInfo.isRequired || quizInfo.passed) && (
+          {/* Next content section - neutral CTA; gated until quiz passed if required */}
+          {isCompleted && (
             <Paper sx={{ p: 2, mb: 2 }}>
-              <Typography variant="h6" gutterBottom>🎉 Video Completed!</Typography>
+              <Typography variant="h6" gutterBottom>Video completed</Typography>
               <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-                Great job! You've completed this video. Ready for the next one?
+                {quizInfo.hasQuiz ? (quizInfo.isRequired ? 'This chapter has a required quiz.' : 'This chapter has an optional quiz.') : 'No quiz for this chapter.'}
               </Typography>
-              <Button variant="contained" color="success" startIcon={<PlayIcon />} onClick={() => navigate(`/course/${videoData?.courseId}`)} fullWidth>
-                Continue to Next Video
-              </Button>
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                {quizInfo.hasQuiz && (
+                  <Button variant="outlined" onClick={() => navigate(`/quiz/${quizInfo.quizId}?videoId=${videoId}`)}>
+                    Go to quiz
+                  </Button>
+                )}
+                <Button
+                  variant="contained"
+                  color="primary"
+                  startIcon={<PlayIcon />}
+                  onClick={() => navigate(`/course/${videoData?.courseId}`)}
+                  disabled={!isTeacher && quizInfo.hasQuiz && quizInfo.isRequired && !quizInfo.passed}
+                >
+                  Proceed to next content
+                </Button>
+              </Box>
             </Paper>
           )}
 
-          {/* Quiz Section */}
-          {quizInfo.hasQuiz && (
-            <Paper sx={{ p: 2, mb: 2 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h6">{quizInfo.quizTitle || 'Quiz'}</Typography>
-                {quizInfo.passed && <Chip label="PASSED" color="success" />}
-              </Box>
-              {!quizInfo.passed && !quizAttempt && (
-                <>
-                  <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-                    {quizInfo.isRequired ? 'This quiz is required to unlock the next video.' : 'Optional quiz.'}
-                  </Typography>
-                  <Button variant="contained" onClick={startQuiz} disabled={quizLoading}>
-                    {quizLoading ? 'Loading...' : 'Start Quiz'}
-                  </Button>
-                </>
-              )}
-              {!quizInfo.passed && quizAttempt && (
-                <>
-                  <Typography variant="subtitle1" sx={{ mb: 1 }}>{quizAttempt.quiz?.title}</Typography>
-                  <Divider sx={{ mb: 2 }} />
-                  {quizAttempt.questions?.map((q, idx) => (
-                    <Box key={q.id} sx={{ mb: 2 }}>
-                      <Typography variant="body1" sx={{ fontWeight: 'bold', mb: 1 }}>
-                        {idx + 1}. {q.text}
-                      </Typography>
-                      {q.imageUrl && (
-                        <Box sx={{ mb: 1 }}>
-                          <img src={q.imageUrl} alt={`Question ${idx + 1}`} style={{ maxWidth: '100%', borderRadius: 6, border: '1px solid #eee' }} />
-                        </Box>
-                      )}
-                      <RadioGroup
-                        value={quizAnswers[q.id] || ''}
-                        onChange={(e) => setQuizAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
-                      >
-                        {q.options?.map(opt => (
-                          <FormControlLabel key={opt.id} value={opt.id} control={<Radio />} label={opt.text} />
-                        ))}
-                      </RadioGroup>
-                    </Box>
-                  ))}
-                  <Button variant="contained" color="primary" onClick={submitQuiz} disabled={quizSubmitting}>
-                    {quizSubmitting ? 'Submitting...' : 'Submit Quiz'}
-                  </Button>
-                  {quizResult && (
-                    <Alert severity={quizResult.passed ? 'success' : 'error'} sx={{ mt: 2 }}>
-                      {quizResult.passed ? `Passed! Score: ${quizResult.scorePct?.toFixed?.(1) || quizResult.scorePct}%` : `Failed. Score: ${quizResult.scorePct?.toFixed?.(1) || quizResult.scorePct}%. Try again.`}
-                    </Alert>
-                  )}
-                </>
-              )}
-            </Paper>
-          )}
+          {/* Quiz UI removed from Video page. Use dedicated Quiz page. */}
 
           {/* Notes Section */}
           <Paper sx={{ p: 2 }}>
