@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Box,
@@ -12,7 +13,8 @@ import {
   ListItemIcon,
   ListItemText,
   CircularProgress,
-  IconButton
+  IconButton,
+  Chip
 } from '@mui/material';
 import {
   ExpandMore as ExpandMoreIcon,
@@ -26,6 +28,8 @@ import {
 import axios from 'axios';
 
 const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }) => {
+  const { user } = useAuth?.() || { user: null };
+  const isTeacher = user && (user.role === 'teacher' || user.role === 'admin');
   const navigate = useNavigate();
   const { courseId } = useParams();
   const [expandedChapters, setExpandedChapters] = useState({});
@@ -33,6 +37,7 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [placeholderToRealId, setPlaceholderToRealId] = useState({});
+  const [videoQuizInfo, setVideoQuizInfo] = useState({}); // videoId -> { hasQuiz, passed, quizId, quizTitle, isRequired }
 
   // Map chapter video to real stored video id
   const resolveVideoId = (chapterVideo) => {
@@ -115,6 +120,20 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }
         });
 
         setVideoProgress(progressMap);
+
+        // Fetch quiz info for each video
+        const quizPromises = allVideos.map(async ({ realId }) => {
+          try {
+            const resp = await axios.get(`/api/quizzes/video/${realId}`);
+            return { videoId: realId, info: resp.data || { hasQuiz: false } };
+          } catch (e) {
+            return { videoId: realId, info: { hasQuiz: false } };
+          }
+        });
+        const quizResults = await Promise.all(quizPromises);
+        const quizMap = {};
+        quizResults.forEach(r => { quizMap[r.videoId] = r.info; });
+        setVideoQuizInfo(quizMap);
       } catch (error) {
         console.error('Error fetching video progress:', error);
       } finally {
@@ -178,6 +197,13 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }
     return 'not-started';
   };
 
+  const getQuizStatus = (video) => {
+    const realId = resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id;
+    const info = videoQuizInfo[realId] || {};
+    if (!info.hasQuiz) return 'none';
+    return info.passed ? 'completed' : 'pending';
+  };
+
   // Flatten course videos in UI order
   const getAllVideosInOrder = () => {
     const list = [];
@@ -194,6 +220,7 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }
   };
 
   const isVideoLocked = (video) => {
+    if (isTeacher) return false;
     const all = getAllVideosInOrder();
     if (all.length === 0) return true;
     // find contiguous completed prefix length
@@ -249,18 +276,22 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }
   const calculateCourseProgress = () => {
     if (!courseData || !courseData.chapters) return 0;
     
-    let totalVideos = 0;
-    let completedVideos = 0;
+    let totalItems = 0;
+    let completedItems = 0;
     
     courseData.chapters.forEach(chapter => {
       if (chapter.sections && Array.isArray(chapter.sections)) {
         chapter.sections.forEach(section => {
           if (section.videos && Array.isArray(section.videos)) {
             section.videos.forEach(video => {
-              totalVideos++;
+              totalItems++;
               const status = getVideoStatus(video);
-              if (status === 'completed') {
-                completedVideos++;
+              if (status === 'completed') completedItems++;
+              // count quiz if exists
+              const qStatus = getQuizStatus(video);
+              if (qStatus !== 'none') {
+                totalItems++;
+                if (qStatus === 'completed') completedItems++;
               }
             });
           }
@@ -268,7 +299,7 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }
       }
     });
     
-    return totalVideos > 0 ? Math.round((completedVideos / totalVideos) * 100) : 0;
+    return totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
   };
 
   if (!courseData) {
@@ -355,55 +386,86 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }
                         const isLocked = isVideoLocked(video);
                         const isCurrent = video.id === currentVideoId;
                         const status = getVideoStatus(video);
+                        const quizInfo = videoQuizInfo[(resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id)] || {};
                         
                         const keyId = video?.id || `${chapterIndex}-${sectionIndex}-${videoIndex}`;
                         return (
-                          <ListItem key={keyId} disablePadding>
-                            <ListItemButton
-                              onClick={() => !isLocked && handleVideoClick(video)}
-                              disabled={isLocked}
-                              sx={{
-                                py: 0.5,
-                                px: 2,
-                                bgcolor: isCurrent ? 'primary.light' : 'transparent',
-                                '&:hover': {
-                                  bgcolor: isCurrent ? 'primary.light' : 'grey.100'
-                                }
-                              }}
-                            >
-                              <ListItemIcon sx={{ minWidth: 32 }}>
-                                {getVideoIcon(video, isLocked)}
-                              </ListItemIcon>
-                              <ListItemText
-                                primary={
-                                  <Typography
-                                    variant="body2"
-                                    sx={{
-                                      color: getVideoTextColor(video, isLocked, isCurrent),
-                                      fontWeight: isCurrent ? 'bold' : 'normal'
-                                    }}
-                                  >
-                                    {video.title}
-                                  </Typography>
-                                }
-                                secondary={
-                                  isLocked ? (
-                                    <Typography variant="caption" color="textSecondary">
-                                      Complete previous videos to unlock
+                          <Box key={keyId}>
+                            <ListItem disablePadding>
+                              <ListItemButton
+                                onClick={() => !isLocked && handleVideoClick(video)}
+                                disabled={isLocked}
+                                sx={{
+                                  py: 0.5,
+                                  px: 2,
+                                  bgcolor: isCurrent ? 'primary.light' : 'transparent',
+                                  '&:hover': {
+                                    bgcolor: isCurrent ? 'primary.light' : 'grey.100'
+                                  }
+                                }}
+                              >
+                                <ListItemIcon sx={{ minWidth: 32 }}>
+                                  {getVideoIcon(video, isLocked)}
+                                </ListItemIcon>
+                                <ListItemText
+                                  primary={
+                                    <Typography
+                                      variant="body2"
+                                      sx={{
+                                        color: getVideoTextColor(video, isLocked, isCurrent),
+                                        fontWeight: isCurrent ? 'bold' : 'normal'
+                                      }}
+                                    >
+                                      {video.title}
                                     </Typography>
-                                  ) : status === 'in-progress' ? (
-                                    <Typography variant="caption" color="primary">
-                                      In Progress
-                                    </Typography>
-                                  ) : status === 'completed' ? (
-                                    <Typography variant="caption" color="success.main">
-                                      Completed
-                                    </Typography>
-                                  ) : null
-                                }
-                              />
-                            </ListItemButton>
-                          </ListItem>
+                                  }
+                                  secondary={
+                                    isLocked ? (
+                                      <Typography variant="caption" color="textSecondary">
+                                        Complete previous videos to unlock
+                                      </Typography>
+                                    ) : status === 'in-progress' ? (
+                                      <Typography variant="caption" color="primary">
+                                        In Progress
+                                      </Typography>
+                                    ) : status === 'completed' ? (
+                                      <Typography variant="caption" color="success.main">
+                                        Completed
+                                      </Typography>
+                                    ) : null
+                                  }
+                                />
+                              </ListItemButton>
+                            </ListItem>
+
+                            {quizInfo.hasQuiz && (
+                              <ListItem disablePadding sx={{ pl: 6 }}>
+                                {(() => {
+                                  const canStartQuiz = !isVideoLocked(video) && getVideoStatus(video) === 'completed';
+                                  return (
+                                <ListItemButton onClick={() => navigate(`/video/${resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id}?startQuiz=1`)} disabled={!canStartQuiz}>
+                                  <ListItemIcon sx={{ minWidth: 32 }}>
+                                    {quizInfo.passed ? <CheckBoxIcon color="success" /> : <CheckBoxOutlineBlankIcon color={canStartQuiz ? 'action' : 'disabled'} />}
+                                  </ListItemIcon>
+                                  <ListItemText
+                                    primary={
+                                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <Typography variant="body2">Quiz: {quizInfo.quizTitle || 'Chapter Quiz'}</Typography>
+                                        {quizInfo.isRequired && <Chip label="Required" size="small" />}
+                                      </Box>
+                                    }
+                                    secondary={quizInfo.passed ? (
+                                      <Typography variant="caption" color="success.main">Passed</Typography>
+                                    ) : (
+                                      <Typography variant="caption" color="textSecondary">{canStartQuiz ? 'Not completed' : 'Complete previous video(s) first'}</Typography>
+                                    )}
+                                  />
+                                </ListItemButton>
+                                  );
+                                })()}
+                              </ListItem>
+                            )}
+                          </Box>
                         );
                       })}
                     </List>

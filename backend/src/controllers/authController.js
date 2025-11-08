@@ -99,7 +99,8 @@ const login = async (req, res) => {
         lastName: user.lastName,
         role: user.role,
         isEmailVerified: user.isEmailVerified,
-        profilePicture: user.profilePicture
+        profilePicture: user.profilePicture,
+        isPasswordChangeRequired: user.isPasswordChangeRequired
       },
       token
     });
@@ -232,6 +233,45 @@ const updateProfile = async (req, res) => {
   }
 };
 
+// Change password
+const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current password and new password are required.' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters long.' });
+    }
+
+    const user = await User.findByPk(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    // Verify current password
+    const isValidPassword = await user.comparePassword(currentPassword);
+    if (!isValidPassword) {
+      return res.status(401).json({ error: 'Current password is incorrect.' });
+    }
+
+    // Update password (will be hashed by beforeUpdate hook)
+    await user.update({
+      password: newPassword,
+      isPasswordChangeRequired: false // Remove password change requirement after change
+    });
+
+    res.json({
+      message: 'Password changed successfully.'
+    });
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({ error: 'Password change failed.' });
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -239,5 +279,6 @@ module.exports = {
   forgotPassword,
   resetPassword,
   getProfile,
-  updateProfile
+  updateProfile,
+  changePassword
 };

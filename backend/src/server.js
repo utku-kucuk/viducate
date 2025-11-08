@@ -10,6 +10,7 @@ const userRoutes = require('./routes/users');
 const courseRoutes = require('./routes/courses');
 const videoRoutes = require('./routes/videos');
 const progressRoutes = require('./routes/progress');
+const quizRoutes = require('./routes/quizzes');
 const adminRoutes = require('./routes/admin');
 const notesRoutes = require('./routes/notes');
 
@@ -117,6 +118,7 @@ app.use('/api/videos', videoRoutes);
 app.use('/api/progress', progressRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/notes', notesRoutes);
+app.use('/api/quizzes', quizRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

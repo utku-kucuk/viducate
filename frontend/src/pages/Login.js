@@ -8,10 +8,15 @@ import {
   Link,
   Alert,
   Paper,
-  Divider
+  Divider,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions
 } from '@mui/material';
 import { Link as RouterLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import axios from 'axios';
 
 const Login = () => {
   const [formData, setFormData] = useState({
@@ -20,6 +25,14 @@ const Login = () => {
   });
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+  const [showPasswordChangeModal, setShowPasswordChangeModal] = useState(false);
+  const [passwordChangeData, setPasswordChangeData] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [passwordErrors, setPasswordErrors] = useState({});
+  const [passwordLoading, setPasswordLoading] = useState(false);
   
   const { login, error, clearError } = useAuth();
   const navigate = useNavigate();
@@ -73,17 +86,24 @@ const Login = () => {
     setLoading(false);
 
     if (result.success) {
-      // Role-based redirect after successful login
+      // Check if password change is required
       const user = JSON.parse(localStorage.getItem('user') || '{}');
-      let redirectPath = from;
       
-      if (user.role === 'teacher' || user.role === 'admin') {
-        redirectPath = '/teacher';
-      } else if (user.role === 'student') {
-        redirectPath = '/dashboard';
+      if (user.isPasswordChangeRequired) {
+        // Show password change modal
+        setShowPasswordChangeModal(true);
+      } else {
+        // Role-based redirect after successful login
+        let redirectPath = from;
+        
+        if (user.role === 'teacher' || user.role === 'admin') {
+          redirectPath = '/teacher';
+        } else if (user.role === 'student') {
+          redirectPath = '/dashboard';
+        }
+        
+        navigate(redirectPath, { replace: true });
       }
-      
-      navigate(redirectPath, { replace: true });
     }
   };
 
@@ -184,6 +204,136 @@ const Login = () => {
           </Box>
         </Paper>
       </Box>
+
+      {/* Password Change Modal */}
+      <Dialog 
+        open={showPasswordChangeModal} 
+        onClose={() => {}} 
+        maxWidth="sm" 
+        fullWidth
+        disableEscapeKeyDown
+      >
+        <DialogTitle>Şifre Değiştirme Zorunlu</DialogTitle>
+        <DialogContent>
+          <Alert severity="warning" sx={{ mb: 3 }}>
+            İlk girişinizde güvenliğiniz için şifrenizi değiştirmeniz gerekmektedir.
+          </Alert>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <TextField
+              label="Mevcut Şifre"
+              type="password"
+              fullWidth
+              value={passwordChangeData.currentPassword}
+              onChange={(e) => {
+                setPasswordChangeData(prev => ({ ...prev, currentPassword: e.target.value }));
+                if (passwordErrors.currentPassword) {
+                  setPasswordErrors(prev => ({ ...prev, currentPassword: '' }));
+                }
+              }}
+              error={!!passwordErrors.currentPassword}
+              helperText={passwordErrors.currentPassword}
+            />
+            <TextField
+              label="Yeni Şifre"
+              type="password"
+              fullWidth
+              value={passwordChangeData.newPassword}
+              onChange={(e) => {
+                setPasswordChangeData(prev => ({ ...prev, newPassword: e.target.value }));
+                if (passwordErrors.newPassword) {
+                  setPasswordErrors(prev => ({ ...prev, newPassword: '' }));
+                }
+              }}
+              error={!!passwordErrors.newPassword}
+              helperText={passwordErrors.newPassword || 'En az 6 karakter olmalıdır'}
+            />
+            <TextField
+              label="Yeni Şifre (Tekrar)"
+              type="password"
+              fullWidth
+              value={passwordChangeData.confirmPassword}
+              onChange={(e) => {
+                setPasswordChangeData(prev => ({ ...prev, confirmPassword: e.target.value }));
+                if (passwordErrors.confirmPassword) {
+                  setPasswordErrors(prev => ({ ...prev, confirmPassword: '' }));
+                }
+              }}
+              error={!!passwordErrors.confirmPassword}
+              helperText={passwordErrors.confirmPassword}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={async () => {
+              // Validate
+              const newErrors = {};
+              
+              if (!passwordChangeData.currentPassword) {
+                newErrors.currentPassword = 'Mevcut şifre gereklidir';
+              }
+              
+              if (!passwordChangeData.newPassword) {
+                newErrors.newPassword = 'Yeni şifre gereklidir';
+              } else if (passwordChangeData.newPassword.length < 6) {
+                newErrors.newPassword = 'Şifre en az 6 karakter olmalıdır';
+              }
+              
+              if (passwordChangeData.newPassword !== passwordChangeData.confirmPassword) {
+                newErrors.confirmPassword = 'Şifreler eşleşmiyor';
+              }
+              
+              if (Object.keys(newErrors).length > 0) {
+                setPasswordErrors(newErrors);
+                return;
+              }
+              
+              // Change password
+              setPasswordLoading(true);
+              try {
+                const token = localStorage.getItem('token');
+                const response = await axios.post('/api/auth/change-password', {
+                  currentPassword: passwordChangeData.currentPassword,
+                  newPassword: passwordChangeData.newPassword
+                }, {
+                  headers: { Authorization: `Bearer ${token}` }
+                });
+                
+                // Update user in localStorage
+                const user = JSON.parse(localStorage.getItem('user') || '{}');
+                user.isPasswordChangeRequired = false;
+                localStorage.setItem('user', JSON.stringify(user));
+                
+                // Close modal and redirect
+                setShowPasswordChangeModal(false);
+                
+                // Role-based redirect
+                let redirectPath = from;
+                if (user.role === 'teacher' || user.role === 'admin') {
+                  redirectPath = '/teacher';
+                } else if (user.role === 'student') {
+                  redirectPath = '/dashboard';
+                }
+                
+                navigate(redirectPath, { replace: true });
+              } catch (error) {
+                const errorMessage = error.response?.data?.error || 'Şifre değiştirme başarısız';
+                if (errorMessage.includes('Current password')) {
+                  setPasswordErrors({ currentPassword: 'Mevcut şifre yanlış' });
+                } else {
+                  setPasswordErrors({ newPassword: errorMessage });
+                }
+              } finally {
+                setPasswordLoading(false);
+              }
+            }}
+            variant="contained"
+            disabled={passwordLoading}
+          >
+            {passwordLoading ? 'Değiştiriliyor...' : 'Şifreyi Değiştir'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };

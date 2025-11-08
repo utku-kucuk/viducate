@@ -16,8 +16,7 @@ import {
   AccordionSummary,
   AccordionDetails,
   Alert,
-  CircularProgress,
-  Button
+  CircularProgress
 } from '@mui/material';
 import {
   PlayArrow as PlayIcon,
@@ -453,7 +452,7 @@ const CourseDetail = () => {
                                               variant="outlined"
                                               size="small"
                                               startIcon={<PlayIcon />}
-                                              disabled={!resolvedVideoId || (!isTeacher && (!isEnrolled || !isVideoUnlocked(resolvedVideoId)))}
+                                              disabled={!resolvedVideoId || (!isTeacher && (!isEnrolled || !isVideoUnlocked(resolvedVideoId))) || !(progress?.isCompleted)}
                                             >
                                               {quizInfo.passed ? 'Review' : 'Start Quiz'}
                                             </Button>

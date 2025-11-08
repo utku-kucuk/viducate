@@ -26,7 +26,15 @@ import {
   Tab,
   Avatar,
   FormControlLabel,
-  Switch
+  Switch,
+  TextField,
+  Select,
+  MenuItem,
+  Paper,
+  RadioGroup,
+  FormControlLabel as MuiFormControlLabel,
+  Radio,
+  Divider
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -52,6 +60,21 @@ const TeacherDashboard = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [courseToDelete, setCourseToDelete] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+
+  // Quiz builder state
+  const [selectedCourseId, setSelectedCourseId] = useState('');
+  const [selectedVideoId, setSelectedVideoId] = useState('');
+  const [quizTitle, setQuizTitle] = useState('Chapter Quiz');
+  const [passThreshold, setPassThreshold] = useState(70);
+  const [questions, setQuestions] = useState([
+    { id: 1, text: '', options: [
+      { id: 1, text: '', isCorrect: true },
+      { id: 2, text: '', isCorrect: false },
+      { id: 3, text: '', isCorrect: false },
+      { id: 4, text: '', isCorrect: false }
+    ], imageUrl: '' }
+  ]);
+  const [creatingQuiz, setCreatingQuiz] = useState(false);
 
   // Fetch teacher's courses
   const fetchCourses = async () => {
@@ -271,6 +294,7 @@ const TeacherDashboard = () => {
           <Tab label="My Courses" />
           <Tab label="Students" />
           <Tab label="Analytics" />
+          <Tab label="Quizzes" />
         </Tabs>
       </Box>
 
@@ -562,6 +586,108 @@ const TeacherDashboard = () => {
                 </Card>
               </Grid>
             </Grid>
+          </CardContent>
+        </Card>
+      )}
+
+      {activeTab === 3 && (
+        <Card>
+          <CardContent>
+            <Typography variant="h5" gutterBottom sx={{ fontWeight: 'bold', mb: 3 }}>
+              Create and Assign Quiz
+            </Typography>
+            <Grid container spacing={2} sx={{ mb: 2 }}>
+              <Grid item xs={12} md={4}>
+                <TextField fullWidth label="Quiz Title" value={quizTitle} onChange={(e) => setQuizTitle(e.target.value)} />
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <TextField fullWidth type="number" label="Pass Threshold (%)" value={passThreshold} onChange={(e) => setPassThreshold(Math.max(1, Math.min(100, Number(e.target.value) || 70)))} />
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <Select fullWidth displayEmpty value={selectedCourseId} onChange={(e) => { setSelectedCourseId(e.target.value); setSelectedVideoId(''); }}>
+                  <MenuItem value="" disabled>Select Course</MenuItem>
+                  {courses.map(c => (
+                    <MenuItem key={c.id} value={c.id}>{c.title}</MenuItem>
+                  ))}
+                </Select>
+              </Grid>
+              <Grid item xs={12} md={12}>
+                <Select fullWidth displayEmpty value={selectedVideoId} onChange={(e) => setSelectedVideoId(e.target.value)} disabled={!selectedCourseId}>
+                  <MenuItem value="" disabled>Select Video (Chapter)</MenuItem>
+                  {courses.find(c => c.id === selectedCourseId)?.videos?.sort((a, b) => (a.order || 0) - (b.order || 0)).map(v => (
+                    <MenuItem key={v.id} value={v.id}>{v.title}</MenuItem>
+                  ))}
+                </Select>
+              </Grid>
+            </Grid>
+            <Divider sx={{ my: 2 }} />
+            <Typography variant="subtitle1" sx={{ mb: 1 }}>Questions</Typography>
+            {questions.map((q, idx) => (
+              <Paper key={q.id} sx={{ p: 2, mb: 2 }}>
+                <Typography variant="body2" sx={{ mb: 1, fontWeight: 'bold' }}>Question {idx + 1}</Typography>
+                <TextField fullWidth placeholder="Enter question text" value={q.text} onChange={(e) => setQuestions(prev => prev.map(x => x.id === q.id ? { ...x, text: e.target.value } : x))} sx={{ mb: 1 }} />
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+                  <Button variant="outlined" component="label" size="small">
+                    {q.imageUrl ? 'Change Image' : 'Upload Image'}
+                    <input type="file" hidden accept="image/*" onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      try {
+                        const fd = new FormData();
+                        fd.append('image', file);
+                        const token = localStorage.getItem('token');
+                        if (token) axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+                        const resp = await axios.post('/api/quizzes/upload-image', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+                        const url = resp?.data?.data?.url;
+                        if (url) setQuestions(prev => prev.map(x => x.id === q.id ? { ...x, imageUrl: url } : x));
+                      } catch (err) {
+                        setSnackbar({ open: true, message: 'Image upload failed', severity: 'error' });
+                      }
+                    }} />
+                  </Button>
+                  {q.imageUrl && <Chip label="Image added" size="small" color="success" />}
+                </Box>
+                <RadioGroup value={q.options.find(o => o.isCorrect)?.id || ''} onChange={(e) => setQuestions(prev => prev.map(x => x.id === q.id ? { ...x, options: x.options.map(o => ({ ...o, isCorrect: String(o.id) === e.target.value })) } : x))}>
+                  {q.options.map((opt, oidx) => (
+                    <MuiFormControlLabel key={opt.id} value={String(opt.id)} control={<Radio />} label={
+                      <TextField fullWidth placeholder={`Option ${oidx + 1}`} value={opt.text} onChange={(e) => setQuestions(prev => prev.map(x => x.id === q.id ? { ...x, options: x.options.map(o => o.id === opt.id ? { ...o, text: e.target.value } : o) } : x))} />
+                    } />
+                  ))}
+                </RadioGroup>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  <Button size="small" onClick={() => setQuestions(prev => prev.filter(x => x.id !== q.id))} disabled={questions.length <= 1}>Remove</Button>
+                </Box>
+              </Paper>
+            ))}
+            <Button variant="outlined" onClick={() => setQuestions(prev => [...prev, { id: Date.now(), text: '', options: [ { id: Date.now()+1, text: '', isCorrect: true }, { id: Date.now()+2, text: '', isCorrect: false }, { id: Date.now()+3, text: '', isCorrect: false }, { id: Date.now()+4, text: '', isCorrect: false } ] }])} sx={{ mb: 2 }}>
+              Add Question
+            </Button>
+            <Box>
+              <Button variant="contained" disabled={creatingQuiz || !selectedVideoId || !quizTitle.trim()} onClick={async () => {
+                try {
+                  setCreatingQuiz(true);
+                  const token = localStorage.getItem('token');
+                  if (token) axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+                  const createResp = await axios.post('/api/quizzes', { title: quizTitle, passThreshold: (Number(passThreshold) || 70) / 100 });
+                  const quizId = createResp?.data?.data?.id;
+                  for (const q of questions) {
+                    const payload = { text: q.text, imageUrl: q.imageUrl || null, options: q.options.map(o => ({ text: o.text, isCorrect: !!o.isCorrect })) };
+                    await axios.post(`/api/quizzes/${quizId}/questions`, payload);
+                  }
+                  await axios.post(`/api/quizzes/${quizId}/assign`, { videoId: selectedVideoId, isRequired: true, unlockNextOnPass: true });
+                  setSnackbar({ open: true, message: 'Quiz created and assigned', severity: 'success' });
+                  // Redirect to course detail so teacher can see it in content
+                  navigate(`/course/${selectedCourseId}`);
+                } catch (err) {
+                  console.error('Create quiz error:', err);
+                  setSnackbar({ open: true, message: 'Failed to create quiz', severity: 'error' });
+                } finally {
+                  setCreatingQuiz(false);
+                }
+              }}>
+                {creatingQuiz ? 'Creating...' : 'Create & Assign Quiz'}
+              </Button>
+            </Box>
           </CardContent>
         </Card>
       )}

@@ -252,9 +252,7 @@ const CreateCourse = () => {
       id: Date.now(),
       title: 'New Video',
       description: 'Video description',
-      file: null,
-      uploadProgress: 0,
-      isUploading: false
+      file: null
     };
     
     setChapters(chapters.map(chapter => 
@@ -356,17 +354,14 @@ const CreateCourse = () => {
       return;
     }
 
-    // Validate sections in chapters
+    // Validate sections in chapters and ensure each new video has a file selected
     for (let chapter of chapters) {
       if (chapter.sections.length === 0) {
         setError(`Chapter "${chapter.title}" must have at least one section`);
         return;
       }
-      
-      // For new videos (not existing ones), check if they have files
       for (let section of chapter.sections) {
         for (let video of section.videos) {
-          // Only validate files for new videos (those without existing fileUrl)
           if (!video.fileUrl && !video.file) {
             setError(`Video "${video.title}" in Section "${section.title}" must have a video file`);
             return;
@@ -449,7 +444,7 @@ const CreateCourse = () => {
         currentCourseId = response.data.data?.id || response.data.id;
         console.log('Course creation response:', response.data);
       }
-      
+
       // Upload new videos if any
       const videoUploadPromises = [];
       let videoCounter = 0;
@@ -504,11 +499,15 @@ const CreateCourse = () => {
                 );
                 
                 if (uploadedVideo && uploadedVideo.data.success) {
+                  const uploadedVideoData = uploadedVideo.data.data;
                   return {
                     ...video,
-                    id: uploadedVideo.data.data.id,
-                    fileUrl: uploadedVideo.data.data.fileUrl,
-                    duration: uploadedVideo.data.data.duration
+                    id: uploadedVideoData.id,
+                    fileUrl: uploadedVideoData.fileUrl || uploadedVideoData.selectedUrl,
+                    duration: uploadedVideoData.duration,
+                    // Include videoVariants if available
+                    videoVariants: uploadedVideoData.videoVariants || null,
+                    quality: uploadedVideoData.quality || '720p'
                   };
                 }
                 
@@ -550,7 +549,7 @@ const CreateCourse = () => {
           setSuccess('Course created successfully!');
         }
       }
-      
+
       // Redirect to the course after 2 seconds
       setTimeout(() => {
         console.log('Course ID for redirect:', currentCourseId);

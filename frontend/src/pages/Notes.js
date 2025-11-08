@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Container, Typography, Box, Paper, TextField, InputAdornment, Chip, Button, Divider, Snackbar, Alert } from '@mui/material';
-import { Search, OpenInNew, Add } from '@mui/icons-material';
-import { Link as RouterLink } from 'react-router-dom';
+import { Search, Add } from '@mui/icons-material';
 import axios from 'axios';
 
 const truncate = (text, max = 160) => {
@@ -181,26 +180,7 @@ const Notes = () => {
                     <Typography variant="body2" color="textSecondary">Course: {item.courseTitle}</Typography>
                   )}
                 </Box>
-                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                  <Chip size="small" label={item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '—'} />
-                  <Button
-                    component={RouterLink}
-                    to={`/video/${item.videoId}`}
-                    variant="outlined"
-                    endIcon={<OpenInNew />}
-                  >
-                    Go to video
-                  </Button>
-                  {item.courseId && (
-                    <Button
-                      component={RouterLink}
-                      to={`/course/${item.courseId}`}
-                      variant="text"
-                    >
-                      Go to course
-                    </Button>
-                  )}
-                </Box>
+                <Chip size="small" label={item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '—'} />
               </Box>
               <Divider sx={{ mb: 1 }} />
               <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>

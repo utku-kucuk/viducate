@@ -50,7 +50,7 @@ const getTeacherCourses = async (req, res) => {
         {
           model: Video,
           as: 'videos',
-          attributes: ['id', 'title', 'duration', 'order']
+          attributes: ['id', 'title', 'duration', 'order', 'fileUrl', 'videoVariants', 'quality']
         },
         {
           model: User,
@@ -62,9 +62,44 @@ const getTeacherCourses = async (req, res) => {
       order: [['createdAt', 'DESC']]
     });
 
+    // Process courses to enhance chapters with video data
+    const processedCourses = courses.map(course => {
+      const courseData = course.toJSON();
+      
+      // Parse chapters if they exist
+      if (courseData.chapters && typeof courseData.chapters === 'string') {
+        try {
+          courseData.chapters = JSON.parse(courseData.chapters);
+        } catch (error) {
+          console.error('Error parsing chapters:', error);
+          courseData.chapters = [];
+        }
+      }
+      
+      // Count videos from chapters
+      let videoCount = 0;
+      if (Array.isArray(courseData.chapters)) {
+        courseData.chapters.forEach(chapter => {
+          if (Array.isArray(chapter.sections)) {
+            chapter.sections.forEach(section => {
+              if (Array.isArray(section.videos)) {
+                videoCount += section.videos.length;
+              }
+            });
+          }
+        });
+      }
+      
+      // Set video count (from chapters or direct videos)
+      courseData.videos = courseData.videos || [];
+      courseData.totalVideos = videoCount || courseData.videos.length;
+      
+      return courseData;
+    });
+
     res.json({
       success: true,
-      courses: courses
+      courses: processedCourses
     });
   } catch (error) {
     console.error('Error fetching teacher courses:', error);
@@ -260,7 +295,7 @@ const createCourse = async (req, res) => {
       });
     }
 
-    const { title, description, category, level, chapters, thumbnail, isPublished } = req.body;
+    const { title, description, category, level, chapters, thumbnail, videoIds } = req.body;
 
     // Create course first
     const course = await Course.create({
@@ -271,11 +306,28 @@ const createCourse = async (req, res) => {
       chapters: chapters || [],
       thumbnail: thumbnail || null,
       teacherId: req.user.id,
-      isPublished: typeof isPublished === 'boolean' ? isPublished : false
+      isPublished: false
     });
+    // If client provided pre-uploaded video ids, attach them
+    if (Array.isArray(videoIds) && videoIds.length > 0) {
+      try {
+        await Video.update(
+          { courseId: course.id },
+          { where: { id: videoIds, teacherId: req.user.id } }
+        );
 
-    // Note: Videos will be uploaded separately via the video upload endpoint
-    // This allows for proper file handling and validation
+        // After linking, check publish condition: all videos completed
+        const linkedVideos = await Video.findAll({ where: { courseId: course.id } });
+        const hasVideos = linkedVideos.length > 0;
+        const allCompleted = hasVideos && linkedVideos.every(v => v.processingStatus === 'completed');
+        if (allCompleted) {
+          await course.update({ isPublished: true });
+          await Video.update({ isPublished: true }, { where: { courseId: course.id } });
+        }
+      } catch (linkErr) {
+        console.error('Failed to link videos to course:', linkErr);
+      }
+    }
 
     console.log('Course created successfully:', course.id);
     res.status(201).json({
@@ -507,6 +559,87 @@ const getCourseById = async (req, res) => {
       } catch (error) {
         console.error('Error parsing chapters:', error);
         courseData.chapters = [];
+      }
+    }
+    
+    // Enhance chapters with actual video data from Video model
+    if (Array.isArray(courseData.chapters)) {
+      // Get all video IDs from chapters
+      const videoIdsInChapters = [];
+      courseData.chapters.forEach(chapter => {
+        if (Array.isArray(chapter.sections)) {
+          chapter.sections.forEach(section => {
+            if (Array.isArray(section.videos)) {
+              section.videos.forEach(video => {
+                if (video.id) {
+                  videoIdsInChapters.push(video.id);
+                }
+              });
+            }
+          });
+        }
+      });
+      
+      // Fetch actual video records if any IDs found
+      if (videoIdsInChapters.length > 0) {
+        try {
+          const actualVideos = await Video.findAll({
+            where: { id: videoIdsInChapters },
+            attributes: ['id', 'title', 'fileUrl', 'videoVariants', 'quality', 'duration', 'description']
+          });
+          
+          // Create a map for quick lookup
+          const videoMap = new Map();
+          actualVideos.forEach(video => {
+            const videoData = video.toJSON();
+            // Add resolution data
+            try {
+              videoData.availableQualities = video.getAvailableQualities();
+              videoData.selectedUrl = video.getVideoUrl() || videoData.fileUrl;
+              videoData.currentQuality = videoData.availableQualities.length > 0 
+                ? videoData.availableQualities[videoData.availableQualities.length - 1] 
+                : videoData.quality || null;
+            } catch (error) {
+              console.error('Error processing video in chapters:', error);
+              videoData.availableQualities = videoData.quality ? [videoData.quality] : [];
+              videoData.selectedUrl = videoData.fileUrl;
+              videoData.currentQuality = videoData.quality || null;
+            }
+            videoMap.set(videoData.id, videoData);
+          });
+          
+          // Update chapters with actual video data
+          courseData.chapters = courseData.chapters.map(chapter => ({
+            ...chapter,
+            sections: chapter.sections ? chapter.sections.map(section => ({
+              ...section,
+              videos: section.videos ? section.videos.map(video => {
+                const actualVideo = videoMap.get(video.id);
+                if (actualVideo) {
+                  // Merge chapter video data with actual video data
+                  return {
+                    ...video,
+                    ...actualVideo,
+                    // Preserve chapter-specific data
+                    title: video.title || actualVideo.title,
+                    description: video.description || actualVideo.description
+                  };
+                }
+                // If video not found in DB, ensure it has at least fileUrl
+                return {
+                  ...video,
+                  fileUrl: video.fileUrl || null,
+                  selectedUrl: video.fileUrl || null,
+                  availableQualities: video.quality ? [video.quality] : [],
+                  currentQuality: video.quality || null
+                };
+              }) : []
+            })) : []
+          }));
+        } catch (error) {
+          console.error('Error fetching videos for chapters:', error);
+          // Continue with chapters as-is if video fetch fails
+        }
       }
     }
     

@@ -192,7 +192,19 @@ const startAttempt = async (req, res) => {
       return res.status(400).json({ error: 'Quiz has no questions' });
     }
     const questionIds = links.map(l => l.questionId);
-    const questionsRaw = await Question.findAll({ where: { id: questionIds } });
+    // Describe Questions table to avoid selecting non-existent columns (e.g., imageUrl)
+    let questionAttributes = ['id', 'text'];
+    try {
+      const qi = sequelize.getQueryInterface();
+      const desc = await qi.describeTable('Questions');
+      if (desc && Object.prototype.hasOwnProperty.call(desc, 'imageUrl')) {
+        questionAttributes = ['id', 'text', 'imageUrl'];
+      }
+    } catch (e) {
+      // fallback to basic attributes
+      questionAttributes = ['id', 'text'];
+    }
+    const questionsRaw = await Question.findAll({ where: { id: questionIds }, attributes: questionAttributes });
     const optionsRaw = await Option.findAll({ where: { questionId: questionIds } });
     const byId = new Map();
     questionsRaw.forEach(q => { byId.set(q.id, q); });
@@ -227,6 +239,11 @@ const startAttempt = async (req, res) => {
 const submitAttempt = async (req, res) => {
   const t = await sequelize.transaction();
   try {
+    const missing = await ensureQuizSchema();
+    if (missing.length > 0) {
+      await t.rollback();
+      return res.status(500).json({ error: 'Quiz schema missing tables', details: { missing } });
+    }
     const { attemptId } = req.params;
     const { answers } = req.body || {};
     if (!Array.isArray(answers) || answers.length === 0) {
@@ -239,13 +256,15 @@ const submitAttempt = async (req, res) => {
     if (attempt.userId !== req.user.id) { await t.rollback(); return res.status(403).json({ error: 'Not your attempt' }); }
     if (attempt.submittedAt) { await t.rollback(); return res.status(400).json({ error: 'Attempt already submitted' }); }
 
-    // Load correct answers
-    const quizQuestions = await QuizQuestion.findAll({ where: { quizId: attempt.quizId }, include: [{ model: Question, as: 'question', include: [{ model: Option, as: 'options' }] }], transaction: t });
+    // Load correct answers (manual queries to avoid imageUrl column issues)
+    const quizQuestions = await QuizQuestion.findAll({ where: { quizId: attempt.quizId }, transaction: t });
+    const questionIds = quizQuestions.map(q => q.questionId);
+    const optionsRaw = await Option.findAll({ where: { questionId: questionIds }, transaction: t });
     const questionIdToCorrectOptionId = new Map();
-    quizQuestions.forEach(qq => {
-      const q = qq.question;
-      const correctOpt = (q.options || []).find(o => o.isCorrect === true);
-      if (correctOpt) questionIdToCorrectOptionId.set(q.id, correctOpt.id);
+    optionsRaw.forEach(o => {
+      if (o.isCorrect === true) {
+        questionIdToCorrectOptionId.set(o.questionId, o.id);
+      }
     });
 
     let numCorrect = 0;
@@ -278,7 +297,7 @@ const submitAttempt = async (req, res) => {
   } catch (error) {
     await t.rollback();
     console.error('submitAttempt error', error);
-    res.status(500).json({ error: 'Failed to submit attempt' });
+    res.status(500).json({ error: 'Failed to submit attempt', details: error?.message });
   }
 };
 

@@ -70,34 +70,75 @@ const VideoUpload = ({ courseId, onVideoUploaded }) => {
     setSuccess(null);
 
     try {
-      const uploadData = new FormData();
-      uploadData.append('video', file);
-      uploadData.append('title', formData.title);
-      uploadData.append('description', formData.description);
-      uploadData.append('courseId', courseId);
-      
-
-
-      const response = await axios.post('/api/videos/upload', uploadData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        onUploadProgress: (progressEvent) => {
-          const percentCompleted = Math.round(
-            (progressEvent.loaded * 100) / progressEvent.total
-          );
-          setProgress(percentCompleted);
-        }
+      // 1) Initiate chunked upload
+      const initResp = await axios.post('/api/videos/initiate-upload', {
+        title: formData.title,
+        description: formData.description,
+        filename: file.name
+      }, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
+
+      const uploadId = initResp.data?.data?.uploadId;
+      const videoId = initResp.data?.data?.videoId || uploadId;
+      if (!uploadId) throw new Error('Failed to initiate upload');
+
+      // 2) Upload chunks sequentially
+      const chunkSize = 5 * 1024 * 1024; // 5MB
+      const totalChunks = Math.ceil(file.size / chunkSize);
+      let uploadedBytes = 0;
+
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * chunkSize;
+        const end = Math.min(start + chunkSize, file.size);
+        const chunk = file.slice(start, end);
+
+        const form = new FormData();
+        form.append('uploadId', uploadId);
+        form.append('chunkNumber', String(i + 1));
+        form.append('chunk', chunk);
+
+        await axios.post('/api/videos/upload-chunk', form, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        });
+
+        uploadedBytes += (end - start);
+        const percentCompleted = Math.round((uploadedBytes / file.size) * 100);
+        setProgress(percentCompleted);
+      }
+
+      // 3) Complete upload
+      await axios.post('/api/videos/complete-upload', {
+        uploadId,
+        filename: file.name,
+        totalChunks
+      }, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+
+      // 4) If courseId provided, link video to course and update metadata
+      if (courseId && videoId) {
+        try {
+          await axios.put(`/api/videos/${videoId}`, {
+            courseId,
+            title: formData.title,
+            description: formData.description
+          }, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+          });
+        } catch (linkErr) {
+          console.warn('Failed to link video to course immediately:', linkErr?.message);
+        }
+      }
 
       setSuccess('Video uploaded successfully!');
       setFile(null);
       setFormData({ title: '', description: '' });
 
-      
       if (onVideoUploaded) {
-        onVideoUploaded(response.data.data);
+        onVideoUploaded({ id: videoId });
       }
 
     } catch (err) {

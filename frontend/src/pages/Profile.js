@@ -11,17 +11,23 @@ import {
   Avatar,
   Divider,
   Chip,
-  Alert
+  Alert,
+  Tabs,
+  Tab
 } from '@mui/material';
 import {
   Edit as EditIcon,
   Save as SaveIcon,
-  Cancel as CancelIcon
+  Cancel as CancelIcon,
+  Lock as LockIcon,
+  CloudUpload as UploadIcon
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
+import axios from 'axios';
 
 const Profile = () => {
   const { user, updateProfile } = useAuth();
+  const [tabValue, setTabValue] = useState(0);
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
     firstName: user?.firstName || '',
@@ -32,6 +38,20 @@ const Profile = () => {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  
+  // Password change state
+  const [passwordData, setPasswordData] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [passwordErrors, setPasswordErrors] = useState({});
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  
+  // Profile picture upload state
+  const [profilePictureFile, setProfilePictureFile] = useState(null);
+  const [profilePicturePreview, setProfilePicturePreview] = useState(null);
+  const [uploadingPicture, setUploadingPicture] = useState(false);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -90,15 +110,70 @@ const Profile = () => {
     setIsEditing(false);
   };
 
+  const handlePasswordChange = async () => {
+    // Validate
+    const newErrors = {};
+    
+    if (!passwordData.currentPassword) {
+      newErrors.currentPassword = 'Mevcut şifre gereklidir';
+    }
+    
+    if (!passwordData.newPassword) {
+      newErrors.newPassword = 'Yeni şifre gereklidir';
+    } else if (passwordData.newPassword.length < 6) {
+      newErrors.newPassword = 'Şifre en az 6 karakter olmalıdır';
+    }
+    
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      newErrors.confirmPassword = 'Şifreler eşleşmiyor';
+    }
+    
+    if (Object.keys(newErrors).length > 0) {
+      setPasswordErrors(newErrors);
+      return;
+    }
+    
+    setPasswordLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.post('/api/auth/change-password', {
+        currentPassword: passwordData.currentPassword,
+        newPassword: passwordData.newPassword
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      setMessage('Şifre başarıyla değiştirildi!');
+      setTimeout(() => setMessage(''), 3000);
+      
+      // Clear form
+      setPasswordData({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      });
+      setPasswordErrors({});
+    } catch (error) {
+      const errorMessage = error.response?.data?.error || 'Şifre değiştirme başarısız';
+      if (errorMessage.includes('Current password')) {
+        setPasswordErrors({ currentPassword: 'Mevcut şifre yanlış' });
+      } else {
+        setPasswordErrors({ newPassword: errorMessage });
+      }
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
       <Typography variant="h4" component="h1" sx={{ mb: 4, fontWeight: 600 }}>
-        Profile Settings
+        Profil Ayarları
       </Typography>
 
       {message && (
         <Alert 
-          severity={message.includes('successfully') ? 'success' : 'error'} 
+          severity={message.includes('başarıyla') || message.includes('successfully') ? 'success' : 'error'} 
           sx={{ mb: 3 }}
           onClose={() => setMessage('')}
         >
@@ -106,6 +181,14 @@ const Profile = () => {
         </Alert>
       )}
 
+      <Card sx={{ mb: 3 }}>
+        <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)}>
+          <Tab label="Profil Bilgileri" icon={<EditIcon />} iconPosition="start" />
+          <Tab label="Şifre Değiştir" icon={<LockIcon />} iconPosition="start" />
+        </Tabs>
+      </Card>
+
+      {tabValue === 0 && (
       <Grid container spacing={4}>
         {/* Profile Info */}
         <Grid item xs={12} md={8}>
@@ -192,15 +275,99 @@ const Profile = () => {
                   />
                 </Grid>
                 <Grid item xs={12}>
-                  <TextField
-                    fullWidth
-                    label="Profile Picture URL"
-                    name="profilePicture"
-                    value={formData.profilePicture}
-                    onChange={handleChange}
-                    disabled={!isEditing}
-                    helperText="Enter a URL for your profile picture"
-                  />
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                      Profil Resmi
+                    </Typography>
+                    {!isEditing ? (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <Avatar
+                          src={user?.profilePicture || formData.profilePicture}
+                          sx={{ width: 80, height: 80 }}
+                        >
+                          {user?.firstName?.charAt(0)}
+                        </Avatar>
+                      </Box>
+                    ) : (
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <input
+                          accept="image/*"
+                          style={{ display: 'none' }}
+                          id="profile-picture-upload"
+                          type="file"
+                          onChange={(e) => {
+                            const file = e.target.files[0];
+                            if (file) {
+                              setProfilePictureFile(file);
+                              const reader = new FileReader();
+                              reader.onloadend = () => {
+                                setProfilePicturePreview(reader.result);
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                        <label htmlFor="profile-picture-upload">
+                          <Button
+                            variant="outlined"
+                            component="span"
+                            startIcon={<UploadIcon />}
+                            disabled={uploadingPicture}
+                          >
+                            {uploadingPicture ? 'Yükleniyor...' : 'Resim Seç'}
+                          </Button>
+                        </label>
+                        {(profilePicturePreview || formData.profilePicture) && (
+                          <Box sx={{ mt: 1 }}>
+                            <Avatar
+                              src={profilePicturePreview || formData.profilePicture}
+                              sx={{ width: 100, height: 100, mb: 1 }}
+                            />
+                            {profilePictureFile && (
+                              <Button
+                                size="small"
+                                variant="contained"
+                                onClick={async () => {
+                                  setUploadingPicture(true);
+                                  try {
+                                    const formData = new FormData();
+                                    formData.append('profilePicture', profilePictureFile);
+                                    
+                                    const token = localStorage.getItem('token');
+                                    const response = await axios.post('/api/auth/upload-profile-picture', formData, {
+                                      headers: {
+                                        'Content-Type': 'multipart/form-data',
+                                        Authorization: `Bearer ${token}`
+                                      }
+                                    });
+                                    
+                                    setFormData(prev => ({ ...prev, profilePicture: response.data.data.url }));
+                                    setProfilePicturePreview(null);
+                                    setProfilePictureFile(null);
+                                    setMessage('Profil resmi başarıyla yüklendi!');
+                                    setTimeout(() => setMessage(''), 3000);
+                                    
+                                    // Update user in context
+                                    const updatedUser = { ...user, profilePicture: response.data.data.url };
+                                    localStorage.setItem('user', JSON.stringify(updatedUser));
+                                    window.location.reload(); // Refresh to show new picture
+                                  } catch (error) {
+                                    setMessage('Profil resmi yüklenirken hata oluştu');
+                                    setTimeout(() => setMessage(''), 3000);
+                                  } finally {
+                                    setUploadingPicture(false);
+                                  }
+                                }}
+                                sx={{ mt: 1 }}
+                              >
+                                Yükle
+                              </Button>
+                            )}
+                          </Box>
+                        )}
+                      </Box>
+                    )}
+                  </Box>
                 </Grid>
               </Grid>
             </CardContent>
@@ -296,6 +463,69 @@ const Profile = () => {
           </Card>
         </Grid>
       </Grid>
+      )}
+
+      {tabValue === 1 && (
+        <Card>
+          <CardContent>
+            <Typography variant="h6" sx={{ mb: 3, fontWeight: 600 }}>
+              Şifre Değiştir
+            </Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <TextField
+                label="Mevcut Şifre"
+                type="password"
+                fullWidth
+                value={passwordData.currentPassword}
+                onChange={(e) => {
+                  setPasswordData(prev => ({ ...prev, currentPassword: e.target.value }));
+                  if (passwordErrors.currentPassword) {
+                    setPasswordErrors(prev => ({ ...prev, currentPassword: '' }));
+                  }
+                }}
+                error={!!passwordErrors.currentPassword}
+                helperText={passwordErrors.currentPassword}
+              />
+              <TextField
+                label="Yeni Şifre"
+                type="password"
+                fullWidth
+                value={passwordData.newPassword}
+                onChange={(e) => {
+                  setPasswordData(prev => ({ ...prev, newPassword: e.target.value }));
+                  if (passwordErrors.newPassword) {
+                    setPasswordErrors(prev => ({ ...prev, newPassword: '' }));
+                  }
+                }}
+                error={!!passwordErrors.newPassword}
+                helperText={passwordErrors.newPassword || 'En az 6 karakter olmalıdır'}
+              />
+              <TextField
+                label="Yeni Şifre (Tekrar)"
+                type="password"
+                fullWidth
+                value={passwordData.confirmPassword}
+                onChange={(e) => {
+                  setPasswordData(prev => ({ ...prev, confirmPassword: e.target.value }));
+                  if (passwordErrors.confirmPassword) {
+                    setPasswordErrors(prev => ({ ...prev, confirmPassword: '' }));
+                  }
+                }}
+                error={!!passwordErrors.confirmPassword}
+                helperText={passwordErrors.confirmPassword}
+              />
+              <Button
+                variant="contained"
+                onClick={handlePasswordChange}
+                disabled={passwordLoading}
+                sx={{ alignSelf: 'flex-start' }}
+              >
+                {passwordLoading ? 'Değiştiriliyor...' : 'Şifreyi Değiştir'}
+              </Button>
+            </Box>
+          </CardContent>
+        </Card>
+      )}
     </Container>
   );
 };
