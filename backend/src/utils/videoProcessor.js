@@ -1,6 +1,7 @@
 const ffmpeg = require('fluent-ffmpeg');
 const path = require('path');
 const fs = require('fs');
+const logger = require('./logger');
 
 // Check if FFmpeg is available (returns Promise)
 const checkFFmpeg = () => {
@@ -8,14 +9,14 @@ const checkFFmpeg = () => {
     try {
       ffmpeg.getAvailableFormats((err) => {
         if (err) {
-          console.warn('FFmpeg is not installed or not available:', err.message);
+          logger.warn('FFmpeg is not installed or not available:', err.message);
           resolve(false);
         } else {
           resolve(true);
         }
       });
     } catch (error) {
-      console.warn('FFmpeg check failed:', error.message);
+      logger.warn('FFmpeg check failed:', error.message);
       resolve(false);
     }
   });
@@ -57,7 +58,7 @@ const processVideoResolutions = async (inputFilePath, outputDir, baseFilename) =
     });
     ffmpegAvailable = true;
   } catch (error) {
-    console.warn('FFmpeg is not available, will only save original video:', error.message);
+    logger.warn('FFmpeg is not available, will only save original video:', error.message);
     // Return original video only
     const originalStats = fs.statSync(inputFilePath);
     return [{
@@ -85,7 +86,7 @@ const processVideoResolutions = async (inputFilePath, outputDir, baseFilename) =
   try {
     sourceResolution = await getVideoResolution(inputFilePath);
   } catch (error) {
-    console.warn('Could not determine source resolution:', error);
+    logger.warn('Could not determine source resolution:', error);
   }
 
   // Process each resolution
@@ -94,7 +95,7 @@ const processVideoResolutions = async (inputFilePath, outputDir, baseFilename) =
     
     // Skip if source is smaller than target (no upscaling)
     if (sourceResolution && sourceResolution.height < config.height) {
-      console.log(`Skipping ${quality} - source resolution (${sourceResolution.height}p) is smaller`);
+      logger.debug(`Skipping ${quality} - source resolution (${sourceResolution.height}p) is smaller`);
       continue;
     }
 
@@ -119,19 +120,19 @@ const processVideoResolutions = async (inputFilePath, outputDir, baseFilename) =
           .format('mp4')
           .videoFilter(scaleFilter)
           .on('start', (commandLine) => {
-            console.log(`Processing ${quality}: ${commandLine}`);
+            logger.debug(`Processing ${quality}: ${commandLine}`);
           })
           .on('progress', (progress) => {
             if (progress.percent) {
-              console.log(`Processing ${quality}: ${Math.round(progress.percent)}% done`);
+              logger.debug(`Processing ${quality}: ${Math.round(progress.percent)}% done`);
             }
           })
           .on('end', () => {
-            console.log(`Finished processing ${quality}`);
+            logger.debug(`Finished processing ${quality}`);
             resolve();
           })
           .on('error', (err) => {
-            console.error(`Error processing ${quality}:`, err.message);
+            logger.error(`Error processing ${quality}:`, err.message);
             reject(err);
           })
           .save(outputPath);
@@ -145,9 +146,9 @@ const processVideoResolutions = async (inputFilePath, outputDir, baseFilename) =
         fileSize: stats.size
       });
 
-      console.log(`Successfully created ${quality} variant: ${outputFilename} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
+      logger.info(`Successfully created ${quality} variant: ${outputFilename} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
     } catch (error) {
-      console.error(`Failed to create ${quality} variant:`, error.message);
+      logger.warn(`Failed to create ${quality} variant:`, error.message);
       // Continue with other resolutions even if one fails
     }
   }

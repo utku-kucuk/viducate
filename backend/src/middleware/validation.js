@@ -1,11 +1,14 @@
 const { body, validationResult } = require('express-validator');
+const logger = require('../utils/logger');
 
 const handleValidationErrors = (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    console.log('=== VALIDATION ERRORS ===');
-    console.log('Request body:', req.body);
-    console.log('Validation errors:', errors.array());
+    if (process.env.NODE_ENV !== 'production') {
+      logger.debug('=== VALIDATION ERRORS ===');
+      logger.debug('Request body:', req.body);
+      logger.debug('Validation errors:', errors.array());
+    }
     return res.status(400).json({ 
       error: 'Validation failed',
       details: errors.array()

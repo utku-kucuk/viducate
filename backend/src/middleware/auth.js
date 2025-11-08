@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { User } = require('../models');
+const logger = require('../utils/logger');
 
 const auth = async (req, res, next) => {
   try {
@@ -9,7 +10,12 @@ const auth = async (req, res, next) => {
       return res.status(401).json({ error: 'Access denied. No token provided.' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (!process.env.JWT_SECRET) {
+      logger.error('JWT_SECRET is not configured');
+      return res.status(500).json({ error: 'Server configuration error.' });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     const user = await User.findByPk(decoded.userId);
 
     if (!user || !user.isActive) {
@@ -25,6 +31,7 @@ const auth = async (req, res, next) => {
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({ error: 'Token expired.' });
     }
+    logger.error('Authentication error:', error);
     res.status(500).json({ error: 'Authentication error.' });
   }
 };

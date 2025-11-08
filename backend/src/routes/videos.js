@@ -10,6 +10,7 @@ const { Video, User, Progress, Course } = require('../models');
 const videoController = require('../controllers/videoController');
 const { processVideoResolutions } = require('../utils/videoProcessor');
 const { v4: uuidv4 } = require('uuid');
+const logger = require('../utils/logger');
 
 // Memory storage for chunk uploads
 const chunkMemoryStorage = multer.memoryStorage();
@@ -115,7 +116,7 @@ router.post('/upload', auth, requireTeacher, upload.single('video'), async (req,
     // Kick off background processing; do not await
     (async () => {
       try {
-        console.log('Starting background video processing for multiple resolutions...');
+        logger.info('Starting background video processing for multiple resolutions...');
         const variants = await processVideoResolutions(inputFilePath, outputDir, baseFilename);
         // Ensure at least original exists
         const finalVariants = Array.isArray(variants) && variants.length > 0 ? variants : originalVariant;
@@ -126,9 +127,9 @@ router.post('/upload', auth, requireTeacher, upload.single('video'), async (req,
           fileUrl: finalVariants[finalVariants.length - 1]?.url || video.fileUrl,
           processingStatus: 'completed'
         });
-        console.log(`Background processing completed. Variants: ${finalVariants.length}`);
+        logger.info(`Background processing completed. Variants: ${finalVariants.length}`);
       } catch (e) {
-        console.error('Background processing failed:', e);
+        logger.error('Background processing failed:', e);
         try {
           await video.update({ processingStatus: 'failed' });
         } catch {}
@@ -177,7 +178,7 @@ router.post('/initiate-upload', auth, requireTeacher, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error initiating upload:', error);
+    logger.error('Error initiating upload:', error);
     return res.status(500).json({ success: false, message: 'Failed to initiate upload' });
   }
 });
@@ -186,7 +187,7 @@ router.post('/initiate-upload', auth, requireTeacher, async (req, res) => {
 router.post('/upload-chunk', auth, requireTeacher, (req, res) => {
   chunkUpload(req, res, async (err) => {
     if (err) {
-      console.error('Chunk upload error:', err);
+      logger.warn('Chunk upload error:', err);
       return res.status(400).json({ success: false, message: err.message || 'Invalid chunk' });
     }
     try {
@@ -205,7 +206,7 @@ router.post('/upload-chunk', auth, requireTeacher, (req, res) => {
 
       return res.json({ success: true });
     } catch (e) {
-      console.error('Failed to save chunk:', e);
+      logger.error('Failed to save chunk:', e);
       return res.status(500).json({ success: false, message: 'Failed to save chunk' });
     }
   });
@@ -259,7 +260,7 @@ router.post('/complete-upload', auth, requireTeacher, async (req, res) => {
       }
       fs.rmdirSync(chunkDir);
     } catch (cleanupErr) {
-      console.warn('Chunk cleanup warning:', cleanupErr.message);
+      logger.warn('Chunk cleanup warning:', cleanupErr.message);
     }
 
     const stat = fs.statSync(finalPath);
@@ -306,16 +307,16 @@ router.post('/complete-upload', auth, requireTeacher, async (req, res) => {
               }
             }
           } catch (e) {
-            console.error('Publish check failed:', e);
+            logger.warn('Publish check failed:', e);
           }
         }
       } catch (e) {
-        console.error('Background finalize failed:', e);
+        logger.error('Background finalize failed:', e);
         try { await video.update({ processingStatus: 'failed' }); } catch {}
       }
     })();
   } catch (error) {
-    console.error('Error completing upload:', error);
+    logger.error('Error completing upload:', error);
     return res.status(500).json({ success: false, message: 'Failed to complete upload' });
   }
 });
@@ -331,7 +332,7 @@ router.post('/fail-upload', auth, requireTeacher, async (req, res) => {
     await video.update({ processingStatus: 'failed' });
     return res.json({ success: true });
   } catch (e) {
-    console.error('fail-upload error:', e);
+    logger.error('fail-upload error:', e);
     return res.status(500).json({ success: false });
   }
 });
@@ -355,7 +356,7 @@ router.get('/', auth, async (req, res) => {
       data: videos
     });
   } catch (error) {
-    console.error('Error fetching videos:', error);
+    logger.error('Error fetching videos:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to fetch videos'
@@ -402,7 +403,7 @@ router.put('/:id', auth, requireTeacher, [
       data: video
     });
   } catch (error) {
-    console.error('Error updating video:', error);
+    logger.error('Error updating video:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to update video'
@@ -437,7 +438,7 @@ router.delete('/:id', auth, requireTeacher, async (req, res) => {
       message: 'Video deleted successfully'
     });
   } catch (error) {
-    console.error('Error deleting video:', error);
+    logger.error('Error deleting video:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to delete video'

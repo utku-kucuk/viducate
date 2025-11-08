@@ -4,6 +4,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 const { DataTypes } = require('sequelize');
+const logger = require('./utils/logger');
 
 const { sequelize } = require('./config/database');
 const authRoutes = require('./routes/auth');
@@ -21,6 +22,8 @@ const PORT = process.env.PORT || (process.env.NODE_ENV === 'development' ? 5001 
 
 // When behind a proxy (e.g., CRA dev server), trust proxy so rate limiter can read client IP
 app.set('trust proxy', 1);
+// Remove X-Powered-By header
+app.disable('x-powered-by');
 
 // Security middleware
 app.use(helmet({
@@ -32,31 +35,29 @@ app.use(cors({
   origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
-    
-    const allowedOrigins = [
-      process.env.FRONTEND_URL || 'http://localhost:3000',
-      'http://localhost:3001',
-      'http://localhost:3002',
-      'http://localhost:3003',
-      'http://localhost:5001'
-    ];
-    
+    const isProd = process.env.NODE_ENV === 'production';
+    const baseAllowed = [process.env.FRONTEND_URL || 'http://localhost:3000'];
+    const devExtras = ['http://localhost:3001','http://localhost:3002','http://localhost:3003','http://localhost:5001'];
+    const allowedOrigins = isProd ? baseAllowed.filter(Boolean) : baseAllowed.concat(devExtras);
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
-      console.log('CORS blocked origin:', origin);
+      if (!isProd) {
+        logger.warn('CORS blocked origin:', origin);
+      }
       callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  optionsSuccessStatus: 204
 }));
 
-// General rate limiting (very lenient for development)
+// General rate limiting
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5000, // limit each IP to 5000 requests per windowMs
+  max: process.env.NODE_ENV === 'production' ? 1000 : 5000,
   message: 'Too many requests from this IP, please try again after 15 minutes',
   standardHeaders: true,
   legacyHeaders: false,
@@ -123,7 +124,11 @@ app.use('/api/meta', metaRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  if (process.env.NODE_ENV === 'production') {
+    logger.error(err);
+  } else {
+    logger.error(err);
+  }
   res.status(500).json({ 
     error: 'Something went wrong!',
     message: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
@@ -145,7 +150,7 @@ async function ensureQuestionImageUrlColumn() {
         type: DataTypes.TEXT,
         allowNull: true
       });
-      console.log('🛠  Added missing column Questions.imageUrl');
+      logger.info('🛠  Added missing column Questions.imageUrl');
     } else {
       // Ensure type is TEXT to support long URLs/base64
       const col = desc.imageUrl;
@@ -157,14 +162,14 @@ async function ensureQuestionImageUrlColumn() {
             type: DataTypes.TEXT,
             allowNull: true
           });
-          console.log('🛠  Updated Questions.imageUrl to TEXT');
+          logger.info('🛠  Updated Questions.imageUrl to TEXT');
         } catch (e) {
-          console.warn('⚠️  Could not alter Questions.imageUrl to TEXT (dialect limitation?):', e?.message || e);
+          logger.warn('⚠️  Could not alter Questions.imageUrl to TEXT (dialect limitation?):', e?.message || e);
         }
       }
     }
   } catch (error) {
-    console.warn('⚠️  Could not ensure Questions.imageUrl column:', error?.message || error);
+    logger.warn('⚠️  Could not ensure Questions.imageUrl column:', error?.message || error);
   }
 }
 
@@ -178,28 +183,28 @@ async function ensureCourseNewColumns() {
         type: DataTypes.STRING,
         allowNull: true
       });
-      console.log('🛠  Added missing column Courses.department');
+      logger.info('🛠  Added missing column Courses.department');
     }
     if (!Object.prototype.hasOwnProperty.call(desc, 'adminDisabled')) {
       await qi.addColumn('Courses', 'adminDisabled', {
         type: DataTypes.BOOLEAN,
         defaultValue: false
       });
-      console.log('🛠  Added missing column Courses.adminDisabled');
+      logger.info('🛠  Added missing column Courses.adminDisabled');
     }
     if (!Object.prototype.hasOwnProperty.call(desc, 'adminPublishLocked')) {
       await qi.addColumn('Courses', 'adminPublishLocked', {
         type: DataTypes.BOOLEAN,
         defaultValue: false
       });
-      console.log('🛠  Added missing column Courses.adminPublishLocked');
+      logger.info('🛠  Added missing column Courses.adminPublishLocked');
     }
     if (!Object.prototype.hasOwnProperty.call(desc, 'teacherPublishAllowed')) {
       await qi.addColumn('Courses', 'teacherPublishAllowed', {
         type: DataTypes.BOOLEAN,
         defaultValue: true
       });
-      console.log('🛠  Added missing column Courses.teacherPublishAllowed');
+      logger.info('🛠  Added missing column Courses.teacherPublishAllowed');
     }
     // Relax category to allowNull if currently not null
     if (desc.category && desc.category.allowNull === false) {
@@ -208,25 +213,25 @@ async function ensureCourseNewColumns() {
           type: DataTypes.STRING,
           allowNull: true
         });
-        console.log('🛠  Updated Courses.category to allow NULL');
+        logger.info('🛠  Updated Courses.category to allow NULL');
       } catch (e) {
-        console.warn('⚠️  Could not alter Courses.category allowNull (may not be supported on current dialect):', e?.message || e);
+        logger.warn('⚠️  Could not alter Courses.category allowNull (may not be supported on current dialect):', e?.message || e);
       }
     }
   } catch (error) {
-    console.warn('⚠️  Could not ensure Courses new columns:', error?.message || error);
+    logger.warn('⚠️  Could not ensure Courses new columns:', error?.message || error);
   }
 }
 
 async function startServer() {
   try {
     await sequelize.authenticate();
-    console.log('✅ Database connection established successfully.');
+    logger.info('✅ Database connection established successfully.');
     
     // Sync database (avoid alter for SQLite to prevent FK/unique issues)
     if (process.env.NODE_ENV === 'development') {
       await sequelize.sync();
-      console.log('✅ Database synchronized (no alter).');
+      logger.info('✅ Database synchronized (no alter).');
     }
     
     // Ensure new columns that may not exist on older DBs
@@ -234,11 +239,11 @@ async function startServer() {
     await ensureCourseNewColumns();
     
     app.listen(PORT, () => {
-      console.log(`🚀 Viducate server running on port ${PORT}`);
-      console.log(`📚 Environment: ${process.env.NODE_ENV || 'development'}`);
+      logger.info(`🚀 Viducate server running on port ${PORT}`);
+      logger.info(`📚 Environment: ${process.env.NODE_ENV || 'development'}`);
     });
   } catch (error) {
-    console.error('❌ Unable to start server:', error);
+    logger.error('❌ Unable to start server:', error);
     process.exit(1);
   }
 }

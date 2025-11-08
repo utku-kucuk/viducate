@@ -68,9 +68,9 @@ const getAllUsers = async (req, res) => {
 
     const whereClause = search ? {
       [Op.or]: [
-        { firstName: { [Op.iLike]: `%${search}%` } },
-        { lastName: { [Op.iLike]: `%${search}%` } },
-        { email: { [Op.iLike]: `%${search}%` } }
+        { firstName: { [Op.like]: `%${search}%` } },
+        { lastName: { [Op.like]: `%${search}%` } },
+        { email: { [Op.like]: `%${search}%` } }
       ]
     } : {};
 

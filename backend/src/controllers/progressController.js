@@ -1,9 +1,11 @@
 const { Progress, Video, User, Course, UserCourse, QuizAttempt } = require('../models');
+const logger = require('../utils/logger');
+const isDev = process.env.NODE_ENV !== 'production';
 
 // Calculate engagement score (0-100)
 function calculateEngagementScore(progress) {
-  console.log('=== ENGAGEMENT SCORE CALCULATION START ===');
-  console.log('Input progress data:', {
+  if (isDev) logger.debug('=== ENGAGEMENT SCORE CALCULATION START ===');
+  if (isDev) logger.debug('Input progress data:', {
     watchPercentage: progress.watchPercentage,
     consecutiveWatchTime: progress.consecutiveWatchTime,
     totalDuration: progress.totalDuration,
@@ -19,7 +21,7 @@ function calculateEngagementScore(progress) {
   // Base score from watch percentage (40% weight)
   const watchScore = (progress.watchPercentage || 0) * 0.4;
   score += watchScore;
-  console.log('Watch score (40%):', watchScore);
+  if (isDev) logger.debug('Watch score (40%):', watchScore);
   
   // Consecutive watch time bonus (20% weight)
   let consecutiveScore = 0;
@@ -27,7 +29,7 @@ function calculateEngagementScore(progress) {
     const consecutiveRatio = progress.consecutiveWatchTime / progress.totalDuration;
     consecutiveScore = Math.min(consecutiveRatio * 100, 20);
     score += consecutiveScore;
-    console.log('Consecutive score (20%):', consecutiveScore, 'ratio:', consecutiveRatio);
+    if (isDev) logger.debug('Consecutive score (20%):', consecutiveScore, 'ratio:', consecutiveRatio);
   }
   
   // Session quality bonus (20% weight)
@@ -36,34 +38,34 @@ function calculateEngagementScore(progress) {
     const sessionQuality = Math.min(progress.averageWatchSession / 300, 1); // 5 minutes = 100%
     sessionScore = sessionQuality * 20;
     score += sessionScore;
-    console.log('Session score (20%):', sessionScore, 'quality:', sessionQuality);
+    if (isDev) logger.debug('Session score (20%):', sessionScore, 'quality:', sessionQuality);
   }
   
   // Engagement indicators (20% weight)
   let engagementIndicators = 0;
   if (progress.notes && progress.notes.length > 10) {
     engagementIndicators += 5;
-    console.log('Notes bonus: +5');
+    if (isDev) logger.debug('Notes bonus: +5');
   }
   if (progress.replayCount > 0) {
     engagementIndicators += 5;
-    console.log('Replay bonus: +5');
+    if (isDev) logger.debug('Replay bonus: +5');
   }
   if (progress.pauseCount > 0 && progress.pauseCount < 10) {
     engagementIndicators += 5;
-    console.log('Pause bonus: +5');
+    if (isDev) logger.debug('Pause bonus: +5');
   }
   if (progress.playCount > 1) {
     engagementIndicators += 5;
-    console.log('Multiple sessions bonus: +5');
+    if (isDev) logger.debug('Multiple sessions bonus: +5');
   }
 
   score += engagementIndicators;
-  console.log('Engagement indicators (20%):', engagementIndicators);
+  if (isDev) logger.debug('Engagement indicators (20%):', engagementIndicators);
 
   const finalScore = Math.max(0, Math.min(score, 100));
-  console.log('Final engagement score:', finalScore);
-  console.log('=== ENGAGEMENT SCORE CALCULATION END ===');
+  if (isDev) logger.debug('Final engagement score:', finalScore);
+  if (isDev) logger.debug('=== ENGAGEMENT SCORE CALCULATION END ===');
 
   return finalScore;
 }
@@ -71,10 +73,10 @@ function calculateEngagementScore(progress) {
 // Update video watching progress
 const updateProgress = async (req, res) => {
   try {
-    console.log('=== UPDATE PROGRESS CALLED ===');
-    console.log('Request body:', req.body);
-    console.log('Video ID:', req.params.videoId);
-    console.log('User ID:', req.user.id);
+    if (isDev) logger.debug('=== UPDATE PROGRESS CALLED ===');
+    if (isDev) logger.debug('Request body:', req.body);
+    if (isDev) logger.debug('Video ID:', req.params.videoId);
+    if (isDev) logger.debug('User ID:', req.user.id);
     
     const { videoId } = req.params;
     const { 
@@ -115,7 +117,7 @@ const updateProgress = async (req, res) => {
       where: { userId, videoId }
     });
 
-    console.log('Existing progress found:', !!progress);
+    if (isDev) logger.debug('Existing progress found:', !!progress);
 
     // Calculate total watched duration from segments
     let totalWatchedDuration = 0;
@@ -131,14 +133,14 @@ const updateProgress = async (req, res) => {
     const finalWatchedDuration = Math.max(watchDuration || 0, totalWatchedDuration);
     const calculatedWatchPercentage = totalDuration > 0 ? (finalWatchedDuration / totalDuration) * 100 : 0;
     
-    console.log('=== PROGRESS CALCULATION ===');
-    console.log('Watched segments:', watchedSegments);
-    console.log('Total watched duration:', finalWatchedDuration);
-    console.log('Total duration:', totalDuration);
-    console.log('Watch percentage:', calculatedWatchPercentage);
+    if (isDev) logger.debug('=== PROGRESS CALCULATION ===');
+    if (isDev) logger.debug('Watched segments:', watchedSegments);
+    if (isDev) logger.debug('Total watched duration:', finalWatchedDuration);
+    if (isDev) logger.debug('Total duration:', totalDuration);
+    if (isDev) logger.debug('Watch percentage:', calculatedWatchPercentage);
 
     if (!progress) {
-      console.log('Creating new progress record...');
+      if (isDev) logger.debug('Creating new progress record...');
       // Create new progress record
       progress = await Progress.create({
         userId,
@@ -157,9 +159,9 @@ const updateProgress = async (req, res) => {
         watchedSegments: watchedSegments || [],
         lastWatchedAt: new Date()
       });
-      console.log('New progress created:', progress.id);
+      if (isDev) logger.debug('New progress created:', progress.id);
     } else {
-      console.log('Updating existing progress record...');
+      if (isDev) logger.debug('Updating existing progress record...');
       // Update existing progress
       const       updateData = {
         watchedDuration: finalWatchedDuration,
@@ -179,13 +181,13 @@ const updateProgress = async (req, res) => {
       if (playCount !== undefined) updateData.playCount = playCount;
       if (watchedSegments !== undefined) updateData.watchedSegments = watchedSegments;
 
-      console.log('Update data:', updateData);
+      if (isDev) logger.debug('Update data:', updateData);
       await progress.update(updateData);
-      console.log('Progress updated');
+      if (isDev) logger.debug('Progress updated');
     }
 
     // Manually calculate and update engagement score
-    console.log('Calculating engagement score manually...');
+    if (isDev) logger.debug('Calculating engagement score manually...');
     const progressData = {
       watchPercentage: progress.watchPercentage,
       consecutiveWatchTime: progress.consecutiveWatchTime || 0,
@@ -198,11 +200,11 @@ const updateProgress = async (req, res) => {
     };
     
     const calculatedEngagementScore = calculateEngagementScore(progressData);
-    console.log('Calculated engagement score:', calculatedEngagementScore);
+    if (isDev) logger.debug('Calculated engagement score:', calculatedEngagementScore);
     
     // Update the engagement score manually
     await progress.update({ engagementScore: calculatedEngagementScore });
-    console.log('Engagement score updated in database');
+    if (isDev) logger.debug('Engagement score updated in database');
 
     // Check for completion (90% threshold)
     const completionThreshold = 90; // 90%
@@ -211,7 +213,7 @@ const updateProgress = async (req, res) => {
     const isNowCompleted = currentWatchPercentage >= completionThreshold && !wasCompleted;
     
     if (isNowCompleted) {
-      console.log(`Video completed! Watch percentage: ${currentWatchPercentage}%`);
+      if (isDev) logger.debug(`Video completed! Watch percentage: ${currentWatchPercentage}%`);
       await progress.update({ 
         isCompleted: true, 
         completionMethod: 'automatic',
@@ -225,7 +227,31 @@ const updateProgress = async (req, res) => {
     // Update video views
     await Video.increment('views', { where: { id: videoId } });
 
-    console.log('Final progress data:', {
+    // Recompute and persist overall course progress for this user
+    try {
+      if (courseId) {
+        const courseVideos = await Video.findAll({ where: { courseId } });
+        const videoIdsInCourse = courseVideos.map(v => v.id);
+        if (videoIdsInCourse.length > 0) {
+          const allProgress = await Progress.findAll({ where: { userId, videoId: videoIdsInCourse } });
+          // Sum watchPercentage across videos with progress; videos without progress count as 0
+          let sumPct = 0;
+          for (const vp of allProgress) {
+            sumPct += Math.max(0, Math.min(100, Number(vp.watchPercentage || 0)));
+          }
+          const totalVideos = videoIdsInCourse.length;
+          const overallPct = totalVideos > 0 ? (sumPct / totalVideos) : 0;
+          await UserCourse.update(
+            { progress: Number(overallPct.toFixed(2)) },
+            { where: { userId, courseId } }
+          );
+        }
+      }
+    } catch (aggErr) {
+      logger.warn('Failed to recompute overall course progress:', aggErr?.message || aggErr);
+    }
+
+    if (isDev) logger.debug('Final progress data:', {
       id: progress.id,
       watchedDuration: progress.watchedDuration,
       totalDuration: progress.totalDuration,
@@ -260,7 +286,7 @@ const updateProgress = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Update progress error:', error);
+    logger.error('Update progress error:', error);
     res.status(500).json({ error: 'Failed to update progress.' });
   }
 };
@@ -291,7 +317,7 @@ const getVideoProgress = async (req, res) => {
 
     res.json({ progress });
   } catch (error) {
-    console.error('Get video progress error:', error);
+    logger.error('Get video progress error:', error);
     res.status(500).json({ error: 'Failed to get video progress.' });
   }
 };
@@ -322,7 +348,7 @@ const getUserProgress = async (req, res) => {
 
     res.json({ progress });
   } catch (error) {
-    console.error('Get user progress error:', error);
+    logger.error('Get user progress error:', error);
     res.status(500).json({ error: 'Failed to get user progress.' });
   }
 };
@@ -359,7 +385,7 @@ const getCourseProgress = async (req, res) => {
       courseStats
     });
   } catch (error) {
-    console.error('Get course progress error:', error);
+    logger.error('Get course progress error:', error);
     res.status(500).json({ error: 'Failed to get course progress.' });
   }
 };
@@ -418,7 +444,7 @@ const getStudentProgress = async (req, res) => {
       return res.json({ progress });
     }
   } catch (error) {
-    console.error('Get student progress error:', error);
+    logger.error('Get student progress error:', error);
     res.status(500).json({ error: 'Failed to get student progress.' });
   }
 };
@@ -474,7 +500,7 @@ const addWatchSession = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Add watch session error:', error);
+    logger.error('Add watch session error:', error);
     res.status(500).json({ error: 'Failed to add watch session.' });
   }
 };
@@ -517,7 +543,7 @@ const updateNotes = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Update notes error:', error);
+    logger.error('Update notes error:', error);
     return res.status(500).json({ error: 'Failed to update notes.' });
   }
 };
