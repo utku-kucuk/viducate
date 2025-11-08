@@ -15,6 +15,10 @@ import {
   Divider
 } from '@mui/material';
 import {
+  ToggleButtonGroup,
+  ToggleButton
+} from '@mui/material';
+import {
   Menu as MenuIcon,
   School as SchoolIcon,
   Dashboard as DashboardIcon,
@@ -27,12 +31,19 @@ import {
 } from '@mui/icons-material';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useTranslation } from 'react-i18next';
+import { useEffect } from 'react';
 
 const Navbar = () => {
   const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const { t, i18n } = useTranslation();
+  const [lang, setLang] = useState(i18n.language?.startsWith('tr') ? 'tr' : 'en');
+  useEffect(() => {
+    setLang(i18n.language?.startsWith('tr') ? 'tr' : 'en');
+  }, [i18n.language]);
   
   const [anchorEl, setAnchorEl] = useState(null);
   const [mobileMenuAnchor, setMobileMenuAnchor] = useState(null);
@@ -96,18 +107,18 @@ const Navbar = () => {
           startIcon={<DashboardIcon />}
           sx={{ textTransform: 'none' }}
         >
-          Dashboards
+          {t('nav.dashboards')}
         </Button>
       );
     } else if (user?.role === 'admin') {
       return (
         <Button
-          onClick={handleAdminDashboardClick}
+          onClick={handleDashboardMenuOpen}
           color="inherit"
           startIcon={<AdminIcon />}
           sx={{ textTransform: 'none' }}
         >
-          Admin Panel
+          {t('nav.adminPanel')}
         </Button>
       );
     } else {
@@ -118,7 +129,7 @@ const Navbar = () => {
           startIcon={<DashboardIcon />}
           sx={{ textTransform: 'none' }}
         >
-          Dashboard
+          {t('nav.dashboard')}
         </Button>
       );
     }
@@ -148,7 +159,7 @@ const Navbar = () => {
                 letterSpacing: '.1rem'
               }}
             >
-              Viducate
+              {t('nav.brand')}
             </Typography>
           </Box>
 
@@ -164,7 +175,7 @@ const Navbar = () => {
                     startIcon={<BookIcon />}
                     sx={{ textTransform: 'none' }}
                   >
-                    Courses
+                    {t('nav.courses')}
                   </Button>
                   {getDashboardButton()}
                   <Button
@@ -174,7 +185,7 @@ const Navbar = () => {
                     startIcon={<NotesIcon />}
                     sx={{ textTransform: 'none' }}
                   >
-                    My Notes
+                    {t('nav.myNotes')}
                   </Button>
                   {user?.role === 'teacher' && (
                     <>
@@ -185,7 +196,7 @@ const Navbar = () => {
                         startIcon={<LibraryBooksIcon />}
                         sx={{ textTransform: 'none' }}
                       >
-                        My Learning
+                        {t('nav.myLearning')}
                       </Button>
                     </>
                   )}
@@ -196,6 +207,75 @@ const Navbar = () => {
 
           {/* Auth Buttons / User Menu */}
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            {/* Language Toggle */}
+            <Box sx={{ mr: 1.5 }}>
+              <ToggleButtonGroup
+                value={lang}
+                exclusive
+                onChange={(_, value) => {
+                  if (!value) return;
+                  setLang(value);
+                  i18n.changeLanguage(value);
+                }}
+                size="small"
+                sx={{
+                  bgcolor: 'grey.200',
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: 999,
+                  p: 0,
+                  overflow: 'hidden',
+                  '& .MuiToggleButton-root': {
+                    border: 0,
+                    margin: 0,
+                    textTransform: 'none',
+                    px: 1.5,
+                    minWidth: 44,
+                    height: 30,
+                    borderRadius: 0
+                  },
+                  '& .MuiToggleButton-root.Mui-selected': {
+                    bgcolor: 'primary.main',
+                    color: 'primary.contrastText'
+                  },
+                  '& .MuiToggleButton-root.Mui-selected:hover': {
+                    bgcolor: 'primary.dark'
+                  }
+                }}
+                aria-label="language toggle"
+              >
+                <ToggleButton
+                  value="tr"
+                  aria-label="Türkçe"
+                  sx={{
+                    textTransform: 'none',
+                    px: 1.5,
+                    minWidth: 44,
+                    border: 0,
+                    height: 30,
+                    borderRadius: 0,
+                    '&.MuiToggleButtonGroup-grouped': { margin: 0, border: 0 }
+                  }}
+                >
+                  TR
+                </ToggleButton>
+                <ToggleButton
+                  value="en"
+                  aria-label="English"
+                  sx={{
+                    textTransform: 'none',
+                    px: 1.5,
+                    minWidth: 44,
+                    border: 0,
+                    height: 30,
+                    borderRadius: 0,
+                    '&.MuiToggleButtonGroup-grouped': { margin: 0, border: 0 }
+                  }}
+                >
+                  EN
+                </ToggleButton>
+              </ToggleButtonGroup>
+            </Box>
             {isAuthenticated ? (
               <>
                 {/* Desktop User Menu */}
@@ -243,24 +323,30 @@ const Navbar = () => {
                 >
                   <MenuItem onClick={handleProfileClick}>
                     <PersonIcon sx={{ mr: 1 }} />
-                    Profile
+                    {t('nav.profile')}
                   </MenuItem>
-                  {user?.role === 'teacher' && (
+                  {(user?.role === 'teacher' || user?.role === 'admin') && (
                     <>
+                      {user?.role === 'admin' && (
+                        <MenuItem onClick={handleAdminDashboardClick}>
+                          <AdminIcon sx={{ mr: 1 }} />
+                          {t('nav.adminPanel')}
+                        </MenuItem>
+                      )}
                       <MenuItem onClick={handleTeacherDashboardClick}>
                         <SchoolIcon sx={{ mr: 1 }} />
-                        Teacher Dashboard
+                        {t('nav.teacherDashboard')}
                       </MenuItem>
                       <MenuItem onClick={handleMyLearningClick}>
                         <LibraryBooksIcon sx={{ mr: 1 }} />
-                        My Learning
+                        {t('nav.myLearning')}
                       </MenuItem>
                       <Divider />
                     </>
                   )}
                   <MenuItem onClick={handleLogout}>
                     <LogoutIcon sx={{ mr: 1 }} />
-                    Logout
+                    {t('nav.logout')}
                   </MenuItem>
                 </Menu>
 
@@ -278,15 +364,21 @@ const Navbar = () => {
                     horizontal: 'right',
                   }}
                 >
-                  {user?.role === 'teacher' && (
+                  {(user?.role === 'teacher' || user?.role === 'admin') && (
                     <>
+                      {user?.role === 'admin' && (
+                        <MenuItem onClick={handleAdminDashboardClick}>
+                          <AdminIcon sx={{ mr: 1 }} />
+                          {t('nav.adminPanel')}
+                        </MenuItem>
+                      )}
                       <MenuItem onClick={handleTeacherDashboardClick}>
                         <SchoolIcon sx={{ mr: 1 }} />
-                        Teacher Dashboard
+                        {t('nav.teacherDashboard')}
                       </MenuItem>
                       <MenuItem onClick={handleMyLearningClick}>
-                        <BookIcon sx={{ mr: 1 }} />
-                        My Learning
+                        <LibraryBooksIcon sx={{ mr: 1 }} />
+                        {t('nav.myLearning')}
                       </MenuItem>
                       <Divider />
                     </>
@@ -294,27 +386,27 @@ const Navbar = () => {
                 {isAuthenticated && (
                   <MenuItem component={Link} to="/courses" onClick={handleMenuClose}>
                     <BookIcon sx={{ mr: 1 }} />
-                    Courses
+                    {t('nav.courses')}
                   </MenuItem>
                 )}
                 {isAuthenticated && (
                   <MenuItem component={Link} to="/notes" onClick={handleMenuClose}>
                     <NotesIcon sx={{ mr: 1 }} />
-                    My Notes
+                    {t('nav.myNotes')}
                   </MenuItem>
                 )}
                   <MenuItem onClick={handleProfileClick}>
                     <PersonIcon sx={{ mr: 1 }} />
-                    Profile
+                    {t('nav.profile')}
                   </MenuItem>
                   <MenuItem onClick={handleLogout}>
                     <LogoutIcon sx={{ mr: 1 }} />
-                    Logout
+                    {t('nav.logout')}
                   </MenuItem>
                 </Menu>
 
-                {/* Dashboard Sub-Menu for Teacher */}
-                {user?.role === 'teacher' && (
+                {/* Dashboard Sub-Menu for Teacher/Admin */}
+                {(user?.role === 'teacher' || user?.role === 'admin') && (
                   <Menu
                     anchorEl={dashboardMenuAnchor}
                     open={Boolean(dashboardMenuAnchor)}
@@ -328,13 +420,19 @@ const Navbar = () => {
                       horizontal: 'right',
                     }}
                   >
+                    {user?.role === 'admin' && (
+                      <MenuItem onClick={handleAdminDashboardClick}>
+                        <AdminIcon sx={{ mr: 1 }} />
+                        {t('nav.adminPanel')}
+                      </MenuItem>
+                    )}
                     <MenuItem onClick={handleTeacherDashboardClick}>
                       <SchoolIcon sx={{ mr: 1 }} />
-                      Teacher Dashboard
+                      {t('nav.teacherDashboard')}
                     </MenuItem>
                     <MenuItem onClick={handleMyLearningClick}>
                       <LibraryBooksIcon sx={{ mr: 1 }} />
-                      My Learning
+                      {t('nav.myLearning')}
                     </MenuItem>
                   </Menu>
                 )}
@@ -347,16 +445,7 @@ const Navbar = () => {
                   color="inherit"
                   sx={{ textTransform: 'none' }}
                 >
-                  Login
-                </Button>
-                <Button
-                  component={Link}
-                  to="/register"
-                  variant="contained"
-                  color="secondary"
-                  sx={{ textTransform: 'none' }}
-                >
-                  Sign Up
+                  {t('nav.login')}
                 </Button>
               </Box>
             )}

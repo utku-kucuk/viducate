@@ -448,7 +448,18 @@ const VideoPlayer = () => {
     setIsWatching(false);
     setIsCurrentlyWatching(false);
     setTimeout(() => { saveProgress(); }, 1000);
-    saveProgress();
+    saveProgress().then(() => {
+      if (isTeacher) return;
+      setTimeout(() => {
+        if (quizInfo.hasQuiz) {
+          navigate(`/quiz/${quizInfo.quizId}?videoId=${videoId}`);
+        } else if (nextVideo?.id) {
+          navigate(`/video/${nextVideo.id}`);
+        } else if (videoData?.courseId) {
+          navigate(`/course/${videoData.courseId}`);
+        }
+      }, 300);
+    });
   };
 
   const handleVideoSeeking = (event) => {
@@ -745,19 +756,27 @@ const VideoPlayer = () => {
             </Box>
           </Box>
 
-          {/* Next Video Button (gated by quiz if required) */}
-          {nextVideo && (
+          {/* Next content button (always enabled after video completion) */}
+          {(nextVideo || quizInfo.hasQuiz) && (
             <Box sx={{ mb: 3, textAlign: 'center' }}>
               {(() => {
-                const requiresQuiz = quizInfo.hasQuiz && quizInfo.isRequired;
-                const canProceed = requiresQuiz ? quizInfo.passed : isCompleted;
+                const canProceed = isCompleted;
                 return (
               <Button
                 variant="contained"
                 size="large"
                 startIcon={<NextIcon />}
                 disabled={!canProceed}
-                onClick={handleGoToNext}
+                onClick={() => {
+                  if (!canProceed) return;
+                  if (quizInfo.hasQuiz) {
+                    navigate(`/quiz/${quizInfo.quizId}?videoId=${videoId}`);
+                  } else if (nextVideo?.id) {
+                    navigate(`/video/${nextVideo.id}`);
+                  } else if (videoData?.courseId) {
+                    navigate(`/course/${videoData.courseId}`);
+                  }
+                }}
                 sx={{
                   px: 4,
                   py: 1.5,
@@ -768,27 +787,32 @@ const VideoPlayer = () => {
                   '&:disabled': { bgcolor: 'grey.300', color: 'grey.500' }
                 }}
               >
-                {canProceed ? 'Next Video' : (quizInfo.hasQuiz && quizInfo.isRequired ? 'Pass the quiz to unlock next video' : 'Complete this video to unlock next video')}
+                {canProceed ? 'Go to next content' : 'Complete this video to continue'}
               </Button>
                 );
               })()}
-              {nextVideo && (
-                <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
-                  Next: {nextVideo.title}
-                </Typography>
-              )}
+              <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+                Next: {quizInfo.hasQuiz ? `Quiz: ${quizInfo.quizTitle || 'Chapter quiz'}` : (nextVideo ? nextVideo.title : '—')}
+              </Typography>
             </Box>
           )}
 
-          {/* Course Completion Message - gated by quiz if required */}
-          {!nextVideo && isCompleted && (isTeacher || !quizInfo.hasQuiz || !quizInfo.isRequired || quizInfo.passed) && (
-            <Box sx={{ mb: 3, textAlign: 'center', p: 3, bgcolor: 'success.light', borderRadius: 2 }}>
-              <Typography variant="h6" color="success.dark" sx={{ fontWeight: 'bold', mb: 1 }}>
-                🎉 Congratulations!
-              </Typography>
-              <Typography variant="body1" color="success.dark">
-                You have completed this course!
-              </Typography>
+          {/* Auto proceed when video fully completed */}
+          {isCompleted && (quizInfo.hasQuiz || nextVideo) && (
+            <Box sx={{ display: 'none' }}>
+              {/* noop marker; effect handled below */}
+            </Box>
+          )}
+
+          {/* Remove course completion banner below top button */}
+          {/* Keep a minimal next label already shown above */}
+
+          {/* If still want to show coming next video name when quiz not present */}
+          {!quizInfo.hasQuiz && nextVideo && (
+            <Box sx={{ mb: 2, textAlign: 'center' }}>
+                <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+                  Next: {nextVideo.title}
+                </Typography>
             </Box>
           )}
 
@@ -859,30 +883,38 @@ const VideoPlayer = () => {
             </Box>
           </Paper>
 
-          {/* Next content section - neutral CTA; gated until quiz passed if required */}
-          {isCompleted && (
-            <Paper sx={{ p: 2, mb: 2 }}>
-              <Typography variant="h6" gutterBottom>Video completed</Typography>
-              <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-                {quizInfo.hasQuiz ? (quizInfo.isRequired ? 'This chapter has a required quiz.' : 'This chapter has an optional quiz.') : 'No quiz for this chapter.'}
+          {/* Next content button */}
+          {(quizInfo.hasQuiz || nextVideo) && (
+            <>
+              <Button
+                variant="contained"
+                size="large"
+                startIcon={<NextIcon />}
+                fullWidth
+                sx={{
+                  mb: 1,
+                  px: 4,
+                  py: 1.5,
+                  fontSize: '1.1rem',
+                  fontWeight: 'bold'
+                }}
+                disabled={!(isTeacher || (typeof currentProgress === 'number' && currentProgress >= 90))}
+                onClick={() => {
+                  if (quizInfo.hasQuiz) {
+                    navigate(`/quiz/${quizInfo.quizId}?videoId=${videoId}`);
+                  } else if (nextVideo?.id) {
+                    navigate(`/video/${nextVideo.id}`);
+                  } else if (videoData?.courseId) {
+                    navigate(`/course/${videoData.courseId}`);
+                  }
+                }}
+              >
+                {(isTeacher || (typeof currentProgress === 'number' && currentProgress >= 90)) ? 'Go to next content' : 'Watch at least 90% to continue'}
+              </Button>
+              <Typography variant="body2" color="textSecondary" align="center" sx={{ mb: 3 }}>
+                Next: {quizInfo.hasQuiz ? `Quiz: ${quizInfo.quizTitle || 'Chapter quiz'}` : (nextVideo ? nextVideo.title : '—')}
               </Typography>
-              <Box sx={{ display: 'flex', gap: 1 }}>
-                {quizInfo.hasQuiz && (
-                  <Button variant="outlined" onClick={() => navigate(`/quiz/${quizInfo.quizId}?videoId=${videoId}`)}>
-                    Go to quiz
-                  </Button>
-                )}
-                <Button
-                  variant="contained"
-                  color="primary"
-                  startIcon={<PlayIcon />}
-                  onClick={() => navigate(`/course/${videoData?.courseId}`)}
-                  disabled={!isTeacher && quizInfo.hasQuiz && quizInfo.isRequired && !quizInfo.passed}
-                >
-                  Proceed to next content
-                </Button>
-              </Box>
-            </Paper>
+            </>
           )}
 
           {/* Quiz UI removed from Video page. Use dedicated Quiz page. */}
