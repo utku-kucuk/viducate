@@ -223,6 +223,25 @@ async function ensureCourseNewColumns() {
   }
 }
 
+// Ensure new columns on Videos table for backward compatibility
+async function ensureVideoNewColumns() {
+  try {
+    const qi = sequelize.getQueryInterface();
+    const desc = await qi.describeTable('Videos');
+    if (!desc) return;
+    if (!Object.prototype.hasOwnProperty.call(desc, 'videoVariants')) {
+      await qi.addColumn('Videos', 'videoVariants', {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        defaultValue: '[]'
+      });
+      logger.info('🛠  Added missing column Videos.videoVariants');
+    }
+  } catch (error) {
+    logger.warn('⚠️  Could not ensure Videos new columns:', error?.message || error);
+  }
+}
+
 async function startServer() {
   try {
     await sequelize.authenticate();
@@ -237,6 +256,7 @@ async function startServer() {
     // Ensure new columns that may not exist on older DBs
     await ensureQuestionImageUrlColumn();
     await ensureCourseNewColumns();
+    await ensureVideoNewColumns();
     
     app.listen(PORT, () => {
       logger.info(`🚀 Viducate server running on port ${PORT}`);
