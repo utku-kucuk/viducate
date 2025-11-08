@@ -15,6 +15,7 @@ import {
   TableRow,
   LinearProgress,
   Chip,
+  Collapse,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -46,7 +47,9 @@ import {
   Visibility as VisibilityIcon,
   Person as PersonIcon,
   TrendingUp as TrendingIcon,
-  Assessment as AssessmentIcon
+  Assessment as AssessmentIcon,
+  KeyboardArrowDown as ArrowDownIcon,
+  KeyboardArrowUp as ArrowUpIcon
 } from '@mui/icons-material';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -93,6 +96,8 @@ const TeacherDashboard = () => {
   const [progressLoading, setProgressLoading] = useState(false);
   const [progressItems, setProgressItems] = useState([]);
   const [progressTarget, setProgressTarget] = useState({ studentId: '', courseId: '', name: '', courseTitle: '' });
+  // Course Progress tab
+  const [expandedCourseIds, setExpandedCourseIds] = useState([]);
 
   const resolveImageUrl = (url) => {
     if (!url) return url;
@@ -177,6 +182,16 @@ const TeacherDashboard = () => {
       setLoading(false);
     };
     loadData();
+  }, []);
+
+  // Lightweight polling to keep progress fresh for teacher dashboard (every 10s)
+  useEffect(() => {
+    const id = setInterval(() => {
+      // Only refresh students (progress values live on enrollments)
+      fetchStudents();
+    }, 10000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Delete course
@@ -345,6 +360,7 @@ const TeacherDashboard = () => {
         <Tabs value={activeTab} onChange={(e, newValue) => setActiveTab(newValue)}>
           <Tab label={t('teacher.tabs.myCourses')} />
           <Tab label={t('teacher.tabs.students')} />
+          <Tab label="Course Progress" />
           <Tab label={t('teacher.tabs.analytics')} />
           <Tab label={t('teacher.tabs.quizzes')} />
         </Tabs>
@@ -619,6 +635,202 @@ const TeacherDashboard = () => {
       {activeTab === 2 && (
         <Card>
           <CardContent>
+            <Box display="flex" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+              <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
+                Course Progress
+              </Typography>
+              <Button size="small" onClick={() => { fetchCourses(); fetchStudents(); }}>
+                Refresh
+              </Button>
+            </Box>
+            {courses.length === 0 ? (
+              <Box textAlign="center" py={6}>
+                <AssessmentIcon sx={{ fontSize: 80, color: 'text.secondary', mb: 3 }} />
+                <Typography variant="h6" color="textSecondary">
+                  No courses to display
+                </Typography>
+              </Box>
+            ) : (
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell />
+                      <TableCell sx={{ fontWeight: 'bold' }}>Course</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }}>Students</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }}>Avg Progress</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }}>Videos</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {courses.map((course) => {
+                      const courseStudents = students.filter(s => s.courseId === course.id);
+                      const avg =
+                        courseStudents.length > 0
+                          ? Math.round(
+                              courseStudents.reduce((sum, s) => sum + (Number(s.progress) || 0), 0) /
+                              courseStudents.length
+                            )
+                          : 0;
+                      const isExpanded = expandedCourseIds.includes(course.id);
+                      return (
+                        <React.Fragment key={course.id}>
+                          <TableRow hover>
+                            <TableCell width={48}>
+                              <IconButton
+                                size="small"
+                                onClick={() =>
+                                  setExpandedCourseIds(prev =>
+                                    prev.includes(course.id)
+                                      ? prev.filter(id => id !== course.id)
+                                      : [...prev, course.id]
+                                  )
+                                }
+                              >
+                                {isExpanded ? <ArrowUpIcon /> : <ArrowDownIcon />}
+                              </IconButton>
+                            </TableCell>
+                            <TableCell>
+                              <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>{course.title}</Typography>
+                              <Typography variant="caption" color="textSecondary">
+                                {course.description?.substring(0, 100) || ''}
+                              </Typography>
+                            </TableCell>
+                            <TableCell>
+                              <Box display="flex" alignItems="center" gap={1}>
+                                <PersonIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                                <Typography variant="body2">{courseStudents.length}</Typography>
+                              </Box>
+                            </TableCell>
+                            <TableCell>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <LinearProgress
+                                  variant="determinate"
+                                  value={avg}
+                                  sx={{ width: 100, height: 8, borderRadius: 4 }}
+                                />
+                                <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                                  {avg}%
+                                </Typography>
+                              </Box>
+                            </TableCell>
+                            <TableCell>
+                              <Box display="flex" alignItems="center" gap={1}>
+                                <VideoIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                                <Typography variant="body2">{course.videos?.length || 0}</Typography>
+                              </Box>
+                            </TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={5}>
+                              <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+                                <Box sx={{ m: 1 }}>
+                                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
+                                    Students
+                                  </Typography>
+                                  {courseStudents.length === 0 ? (
+                                    <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
+                                      No enrolled students for this course.
+                                    </Typography>
+                                  ) : (
+                                    <Table size="small">
+                                      <TableHead>
+                                        <TableRow>
+                                          <TableCell sx={{ fontWeight: 'bold' }}>Student</TableCell>
+                                          <TableCell sx={{ fontWeight: 'bold' }}>Email</TableCell>
+                                          <TableCell sx={{ fontWeight: 'bold' }}>Progress</TableCell>
+                                          <TableCell sx={{ fontWeight: 'bold' }}>Actions</TableCell>
+                                        </TableRow>
+                                      </TableHead>
+                                      <TableBody>
+                                        {courseStudents.map(st => (
+                                          <TableRow key={`${course.id}-${st.id}`}>
+                                            <TableCell>
+                                              <Box display="flex" alignItems="center" gap={1}>
+                                                <Avatar sx={{ bgcolor: 'primary.main' }}>
+                                                  {st.firstName?.charAt(0)}{st.lastName?.charAt(0)}
+                                                </Avatar>
+                                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                                  {st.firstName} {st.lastName}
+                                                </Typography>
+                                              </Box>
+                                            </TableCell>
+                                            <TableCell>
+                                              <Typography variant="body2">{st.email}</Typography>
+                                            </TableCell>
+                                            <TableCell width={220}>
+                                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                <LinearProgress
+                                                  variant="determinate"
+                                                  value={st.progress || 0}
+                                                  sx={{ width: 120, height: 8, borderRadius: 4 }}
+                                                />
+                                                <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                                                  {Math.round(Number(st.progress || 0))}%
+                                                </Typography>
+                                              </Box>
+                                            </TableCell>
+                                            <TableCell width={120}>
+                                              <IconButton
+                                                size="small"
+                                                title="View per-video details"
+                                                color="primary"
+                                                onClick={async () => {
+                                                  try {
+                                                    setProgressTarget({
+                                                      studentId: st.id,
+                                                      courseId: course.id,
+                                                      name: `${st.firstName} ${st.lastName}`,
+                                                      courseTitle: course.title
+                                                    });
+                                                    setProgressDialogOpen(true);
+                                                    setProgressLoading(true);
+                                                    const token = localStorage.getItem('token');
+                                                    if (token) axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+                                                    const resp = await axios.get(`/api/progress/student/${st.id}/course/${course.id}`);
+                                                    const arr = resp?.data?.progress || [];
+                                                    const norm = arr.map(p => ({
+                                                      videoId: p.videoId,
+                                                      title: p.video?.title || 'Video',
+                                                      watchPercentage: Math.round(Number(p.watchPercentage || 0)),
+                                                      isCompleted: !!p.isCompleted,
+                                                      quizPassed: !!p.quizPassed,
+                                                      lastWatchedAt: p.lastWatchedAt ? new Date(p.lastWatchedAt).toLocaleString() : '-'
+                                                    })).sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+                                                    setProgressItems(norm);
+                                                  } catch (err) {
+                                                    setSnackbar({ open: true, message: 'Failed to load student progress', severity: 'error' });
+                                                  } finally {
+                                                    setProgressLoading(false);
+                                                  }
+                                                }}
+                                              >
+                                                <TrendingIcon fontSize="small" />
+                                              </IconButton>
+                                            </TableCell>
+                                          </TableRow>
+                                        ))}
+                                      </TableBody>
+                                    </Table>
+                                  )}
+                                </Box>
+                              </Collapse>
+                            </TableCell>
+                          </TableRow>
+                        </React.Fragment>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {activeTab === 3 && (
+        <Card>
+          <CardContent>
             <Typography variant="h5" gutterBottom sx={{ fontWeight: 'bold', mb: 3 }}>
               Course Analytics
             </Typography>
@@ -666,7 +878,7 @@ const TeacherDashboard = () => {
         </Card>
       )}
 
-      {activeTab === 3 && (
+      {activeTab === 4 && (
         <Card>
           <CardContent>
             <Typography variant="h5" gutterBottom sx={{ fontWeight: 'bold', mb: 1 }}>

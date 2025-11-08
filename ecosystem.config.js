@@ -10,7 +10,7 @@ module.exports = {
       max_memory_restart: '1G',
       env: {
         NODE_ENV: 'production',
-        PORT: 5000
+        PORT: 8080
       },
       error_file: '/home/pi/logs/viducate-backend-error.log',
       out_file: '/home/pi/logs/viducate-backend-out.log',

@@ -186,9 +186,9 @@ const getCredentialsEmailTemplate = (email, password, loginUrl) => {
 // Send credentials email
 const sendCredentialsEmail = async (email, password, firstName = '') => {
   if (!resend) {
-    console.warn('⚠️  Email service not configured. Skipping email send to:', email);
-    console.warn('⚠️  User credentials:', { email, password });
-    throw new Error('Email service not configured. Please set RESEND_API_KEY in environment variables.');
+    console.warn('⚠️  Email service not configured. Skipping email send.');
+    // Do not throw in test/staging; return a safe no-op response
+    return { success: false, skipped: true };
   }
 
   try {

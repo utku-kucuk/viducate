@@ -436,7 +436,7 @@ const deleteDepartmentAdmin = async (req, res) => {
 // Create user (admin only)
 const createUser = async (req, res) => {
   try {
-    const { email, firstName, lastName, role = 'student', sendEmail = true } = req.body;
+    const { email, firstName, lastName, role = 'student', sendEmail = false } = req.body;
 
     // Validate required fields
     if (!email || !firstName || !lastName) {
@@ -523,7 +523,7 @@ const bulkCreateUsers = async (req, res) => {
       });
     }
 
-    const { sendEmails = true } = req.body;
+    const { sendEmails = false } = req.body;
 
     // Parse CSV file
     let records;
