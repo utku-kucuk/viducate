@@ -33,8 +33,10 @@ import {
 import { useNavigate, useParams, Link as RouterLink } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
+import { useTranslation } from 'react-i18next';
 
 const CreateCourse = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { user } = useAuth();
   const { id: courseId } = useParams();
@@ -49,9 +51,12 @@ const CreateCourse = () => {
     title: '',
     description: '',
     category: '',
+    department: '',
     level: 'beginner',
     isPublished: false
   });
+  const [categories, setCategories] = useState([]);
+  const [departments, setDepartments] = useState([]);
   const [chapters, setChapters] = useState([
     {
       id: 1,
@@ -70,6 +75,19 @@ const CreateCourse = () => {
 
   // Load course data when in edit mode
   useEffect(() => {
+    // Load meta lists
+    (async () => {
+      try {
+        const [cats, deps] = await Promise.all([
+          axios.get('/api/meta/categories'),
+          axios.get('/api/meta/departments')
+        ]);
+        setCategories(cats?.data?.data || []);
+        setDepartments(deps?.data?.data || []);
+      } catch (e) {
+        // ignore silently
+      }
+    })();
     if (isEditMode && courseId) {
       const loadCourseData = async () => {
         try {
@@ -82,6 +100,7 @@ const CreateCourse = () => {
             title: course.title || '',
             description: course.description || '',
             category: course.category || '',
+            department: course.department || '',
             level: course.level || 'beginner'
           });
           
@@ -125,14 +144,14 @@ const CreateCourse = () => {
     return (
       <Container maxWidth="lg" sx={{ mt: 4 }}>
         <Alert severity="error" sx={{ mb: 2 }}>
-          Access Denied: Only teachers and administrators can create courses.
+          {t('createCourse.accessDenied', 'Access Denied: Only teachers and administrators can create courses.')}
         </Alert>
         <Button
           variant="contained"
           onClick={() => navigate('/dashboard')}
           sx={{ mt: 2 }}
         >
-          Back to Dashboard
+          {t('createCourse.backToDashboard', 'Back to Dashboard')}
         </Button>
       </Container>
     );
@@ -343,7 +362,7 @@ const CreateCourse = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (!formData.title.trim() || !formData.description.trim() || !formData.category.trim()) {
+    if (!formData.title.trim() || !formData.description.trim()) {
       setError('Please fill in all required fields');
       return;
     }
@@ -578,16 +597,16 @@ const CreateCourse = () => {
           onClick={() => navigate('/dashboard')}
           sx={{ mb: 2 }}
         >
-          Back to Dashboard
+          {t('createCourse.backToDashboard', 'Back to Dashboard')}
         </Button>
         
         <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 700 }}>
-          {isEditMode ? 'Edit Course' : 'Create New Course'}
+          {isEditMode ? t('createCourse.headerEdit', 'Edit Course') : t('createCourse.headerCreate', 'Create New Course')}
         </Typography>
         <Typography variant="body1" color="textSecondary">
           {isEditMode 
-            ? 'Update your course content, structure, and materials'
-            : 'Organize your content into chapters, sections, and videos for structured learning'
+            ? t('createCourse.headerSubEdit', 'Update your course content, structure, and materials')
+            : t('createCourse.headerSubCreate', 'Organize your content into chapters, sections, and videos for structured learning')
           }
         </Typography>
       </Box>
@@ -597,18 +616,18 @@ const CreateCourse = () => {
         <Card sx={{ mb: 3 }}>
           <CardContent>
             <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', mb: 3 }}>
-              Basic Course Information
+              {t('createCourse.basicInfo', 'Basic Course Information')}
             </Typography>
             
             <Grid container spacing={3}>
               <Grid item xs={12}>
                 <TextField
                   fullWidth
-                  label="Course Title"
+                  label={t('createCourse.title', 'Course Title')}
                   value={formData.title}
                   onChange={(e) => handleInputChange('title', e.target.value)}
                   required
-                  placeholder="e.g., Complete Web Development Bootcamp"
+                  placeholder={t('createCourse.titlePh', 'e.g., Complete Web Development Bootcamp')}
                 />
               </Grid>
               
@@ -617,49 +636,73 @@ const CreateCourse = () => {
                   fullWidth
                   multiline
                   rows={3}
-                  label="Course Description"
+                  label={t('createCourse.description', 'Course Description')}
                   value={formData.description}
                   onChange={(e) => handleInputChange('description', e.target.value)}
                   required
-                  placeholder="Describe what students will learn in this course"
-                />
-              </Grid>
-              
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  label="Category"
-                  value={formData.category}
-                  onChange={(e) => handleInputChange('category', e.target.value)}
-                  required
-                  placeholder="e.g., Programming, Design, Business"
+                  placeholder={t('createCourse.descriptionPh', 'Describe what students will learn in this course')}
                 />
               </Grid>
               
               <Grid item xs={12} sm={6}>
                 <FormControl fullWidth>
-                  <InputLabel>Difficulty Level</InputLabel>
+                  <InputLabel>{t('createCourse.categoryOpt', 'Category (optional)')}</InputLabel>
+                  <Select
+                    value={formData.category || ''}
+                    label={t('createCourse.categoryOpt', 'Category (optional)')}
+                    onChange={(e) => handleInputChange('category', e.target.value)}
+                    displayEmpty
+                    renderValue={(v) => v || '—'}
+                  >
+                    <MenuItem value="">{'—'}</MenuItem>
+                    {categories.map((c) => (
+                      <MenuItem key={c.id} value={c.name}>{c.name}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <FormControl fullWidth>
+                  <InputLabel>{t('createCourse.departmentOpt', 'Department (optional)')}</InputLabel>
+                  <Select
+                    value={formData.department || ''}
+                    label={t('createCourse.departmentOpt', 'Department (optional)')}
+                    onChange={(e) => handleInputChange('department', e.target.value)}
+                    displayEmpty
+                    renderValue={(v) => v || '—'}
+                  >
+                    <MenuItem value="">{'—'}</MenuItem>
+                    {departments.map((d) => (
+                      <MenuItem key={d.id} value={d.name}>{d.name}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              
+              <Grid item xs={12} sm={6}>
+                <FormControl fullWidth>
+                  <InputLabel>{t('createCourse.level', 'Difficulty Level')}</InputLabel>
                   <Select
                     value={formData.level}
                     onChange={(e) => handleInputChange('level', e.target.value)}
-                    label="Difficulty Level"
+                    label={t('createCourse.level', 'Difficulty Level')}
                   >
-                    <MenuItem value="beginner">Beginner</MenuItem>
-                    <MenuItem value="intermediate">Intermediate</MenuItem>
-                    <MenuItem value="advanced">Advanced</MenuItem>
+                    <MenuItem value="beginner">{t('createCourse.levelBeginner', 'Beginner')}</MenuItem>
+                    <MenuItem value="intermediate">{t('createCourse.levelIntermediate', 'Intermediate')}</MenuItem>
+                    <MenuItem value="advanced">{t('createCourse.levelAdvanced', 'Advanced')}</MenuItem>
                   </Select>
                 </FormControl>
               </Grid>
               <Grid item xs={12}>
                 <FormControlLabel
                   control={<Switch checked={formData.isPublished} onChange={(e) => handleInputChange('isPublished', e.target.checked)} />}
-                  label="Publish course"
+                  label={t('createCourse.publish', 'Publish course')}
                 />
               </Grid>
               
               <Grid item xs={12}>
                 <Typography variant="h6" sx={{ mb: 2 }}>
-                  Course Cover Photo
+                  {t('createCourse.coverPhoto', 'Course Cover Photo')}
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
                   <Button
@@ -668,7 +711,7 @@ const CreateCourse = () => {
                     startIcon={<UploadIcon />}
                     sx={{ minWidth: 200 }}
                   >
-                    Choose Cover Photo
+                    {t('createCourse.chooseCover', 'Choose Cover Photo')}
                     <input
                       type="file"
                       hidden
@@ -708,14 +751,14 @@ const CreateCourse = () => {
           <CardContent>
             <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 3 }}>
               <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                Course Structure: Chapters → Sections → Videos
+                {t('createCourse.structure', 'Course Structure: Chapters → Sections → Videos')}
               </Typography>
               <Button
                 variant="outlined"
                 startIcon={<AddIcon />}
                 onClick={addChapter}
               >
-                Add Chapter
+                {t('createCourse.addChapter', 'Add Chapter')}
               </Button>
             </Box>
             
@@ -739,19 +782,19 @@ const CreateCourse = () => {
                     <Grid item xs={12} sm={6}>
                       <TextField
                         fullWidth
-                        label="Chapter Title"
+                      label={t('createCourse.chapterTitle', 'Chapter Title')}
                         value={chapter.title}
                         onChange={(e) => updateChapter(chapter.id, 'title', e.target.value)}
-                        placeholder="e.g., Chapter 1: Introduction to HTML"
+                      placeholder={t('createCourse.chapterTitlePh', 'e.g., Chapter 1: Introduction to HTML')}
                       />
                     </Grid>
                     <Grid item xs={12} sm={6}>
                       <TextField
                         fullWidth
-                        label="Chapter Description"
+                      label={t('createCourse.chapterDesc', 'Chapter Description')}
                         value={chapter.description}
                         onChange={(e) => updateChapter(chapter.id, 'description', e.target.value)}
-                        placeholder="Brief description of this chapter"
+                      placeholder={t('createCourse.chapterDescPh', 'Brief description of this chapter')}
                       />
                     </Grid>
                   </Grid>
@@ -759,7 +802,7 @@ const CreateCourse = () => {
                   <Box sx={{ mb: 2 }}>
                     <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
                       <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-                        Sections in this Chapter
+                      {t('createCourse.sectionsInChapter', 'Sections in this Chapter')}
                       </Typography>
                       <Button
                         size="small"
@@ -767,7 +810,7 @@ const CreateCourse = () => {
                         startIcon={<AddIcon />}
                         onClick={() => addSection(chapter.id)}
                       >
-                        Add Section
+                      {t('createCourse.addSection', 'Add Section')}
                       </Button>
                     </Box>
                     
@@ -792,20 +835,20 @@ const CreateCourse = () => {
                               <TextField
                                 fullWidth
                                 size="small"
-                                label="Section Title"
+                              label={t('createCourse.sectionTitle', 'Section Title')}
                                 value={section.title}
                                 onChange={(e) => updateSection(chapter.id, section.id, 'title', e.target.value)}
-                                placeholder="e.g., Section 1.1: HTML Basics"
+                              placeholder={t('createCourse.sectionTitlePh', 'e.g., Section 1.1: HTML Basics')}
                               />
                             </Grid>
                             <Grid item xs={12} sm={6}>
                               <TextField
                                 fullWidth
                                 size="small"
-                                label="Section Description"
+                              label={t('createCourse.sectionDesc', 'Section Description')}
                                 value={section.description}
                                 onChange={(e) => updateSection(chapter.id, section.id, 'description', e.target.value)}
-                                placeholder="Brief description of this section"
+                              placeholder={t('createCourse.sectionDescPh', 'Brief description of this section')}
                               />
                             </Grid>
                           </Grid>
@@ -813,7 +856,7 @@ const CreateCourse = () => {
                           <Box sx={{ mb: 2 }}>
                             <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
                               <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-                                Videos in this Section
+                              {t('createCourse.videosInSection', 'Videos in this Section')}
                               </Typography>
                               <Button
                                 size="small"
@@ -821,7 +864,7 @@ const CreateCourse = () => {
                                 startIcon={<AddIcon />}
                                 onClick={() => addVideo(chapter.id, section.id)}
                               >
-                                Add Video
+                              {t('createCourse.addVideo', 'Add Video')}
                               </Button>
                             </Box>
                             
@@ -833,10 +876,10 @@ const CreateCourse = () => {
                                       <TextField
                                         fullWidth
                                         size="small"
-                                        label="Video Title"
+                                        label={t('createCourse.videoTitle', 'Video Title')}
                                         value={video.title}
                                         onChange={(e) => updateVideo(chapter.id, section.id, video.id, 'title', e.target.value)}
-                                        placeholder="Video title"
+                                        placeholder={t('createCourse.videoTitlePh', 'Video title')}
                                       />
                                     </Grid>
                                     <Grid item xs={12} sm={4}>
@@ -847,7 +890,7 @@ const CreateCourse = () => {
                                         startIcon={<UploadIcon />}
                                         fullWidth
                                       >
-                                        {video.file && video.file.name ? video.file.name.substring(0, 25) + '...' : 'Select Video'}
+                                        {video.file && video.file.name ? video.file.name.substring(0, 25) + '...' : t('createCourse.selectVideo', 'Select Video')}
                                         <input
                                           type="file"
                                           hidden
@@ -875,10 +918,10 @@ const CreateCourse = () => {
                                       <TextField
                                         fullWidth
                                         size="small"
-                                        label="Video Description"
+                                        label={t('createCourse.videoDesc', 'Video Description')}
                                         value={video.description}
                                         onChange={(e) => updateVideo(chapter.id, section.id, video.id, 'description', e.target.value)}
-                                        placeholder="Brief description of this video"
+                                        placeholder={t('createCourse.videoDescPh', 'Brief description of this video')}
                                       />
                                     </Box>
                                   )}
@@ -896,7 +939,7 @@ const CreateCourse = () => {
                               onClick={() => deleteSection(chapter.id, section.id)}
                               size="small"
                             >
-                              Delete Section
+                              {t('createCourse.deleteSection', 'Delete Section')}
                             </Button>
                           )}
                         </AccordionDetails>
@@ -912,7 +955,7 @@ const CreateCourse = () => {
                       onClick={() => deleteChapter(chapter.id)}
                       size="small"
                     >
-                      Delete Chapter
+                      {t('createCourse.deleteChapter', 'Delete Chapter')}
                     </Button>
                   )}
                 </AccordionDetails>
@@ -932,8 +975,8 @@ const CreateCourse = () => {
             sx={{ px: 4, py: 1.5 }}
           >
             {loading 
-              ? (isEditMode ? 'Updating Course...' : 'Creating Course...') 
-              : (isEditMode ? 'Update Course' : 'Create Course')
+              ? (isEditMode ? t('createCourse.submitUpdating', 'Updating Course...') : t('createCourse.submitCreating', 'Creating Course...')) 
+              : (isEditMode ? t('createCourse.submitUpdate', 'Update Course') : t('createCourse.submitCreate', 'Create Course'))
             }
           </Button>
         </Box>

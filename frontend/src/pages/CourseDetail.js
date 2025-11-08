@@ -26,10 +26,12 @@ import {
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
+import { useTranslation } from 'react-i18next';
 
 const CourseDetail = () => {
   const { id: courseId } = useParams();
   const { user } = useAuth();
+  const { t } = useTranslation();
   
   const [course, setCourse] = useState(null);
   const [userProgress, setUserProgress] = useState({});
@@ -218,7 +220,7 @@ const CourseDetail = () => {
       <Container maxWidth="lg" sx={{ mt: 4, textAlign: 'center' }}>
         <CircularProgress size={60} />
         <Typography variant="h6" sx={{ mt: 2 }}>
-          Loading course...
+          {t('courseDetail.loading')}
         </Typography>
       </Container>
     );
@@ -235,7 +237,7 @@ const CourseDetail = () => {
   if (!course) {
     return (
       <Container maxWidth="lg" sx={{ mt: 4 }}>
-        <Alert severity="error">Course not found</Alert>
+        <Alert severity="error">{t('courseDetail.notFound')}</Alert>
       </Container>
     );
   }
@@ -272,19 +274,19 @@ const CourseDetail = () => {
               <Box display="flex" gap={2} flexWrap="wrap" sx={{ mb: 2 }}>
                 <Chip label={course.category} color="primary" variant="outlined" />
                 <Chip label={course.level} color="secondary" variant="outlined" />
-                <Chip label="Free" color="success" />
+                <Chip label={t('courseDetail.free')} color="success" />
               </Box>
               
               <Box display="flex" gap={3} sx={{ mb: 2 }}>
                 <Typography variant="body2" color="textSecondary">
-                  <strong>{course.totalVideos || 0}</strong> videos
+                  <strong>{course.totalVideos || 0}</strong> {t('dashboard.videosCount', { count: course.totalVideos || 0 })}
                 </Typography>
                 <Typography variant="body2" color="textSecondary">
-                  <strong>{course.studentCount || 0}</strong> students enrolled
+                  <strong>{course.studentCount || 0}</strong> {t('courseDetail.studentsEnrolled', { count: course.studentCount || 0 })}
                 </Typography>
                 {course.rating > 0 && (
                   <Typography variant="body2" color="textSecondary">
-                    <strong>{course.rating}</strong> rating
+                    <strong>{course.rating}</strong> {t('courseDetail.rating', { rating: course.rating })}
                   </Typography>
                 )}
               </Box>
@@ -297,7 +299,7 @@ const CourseDetail = () => {
                 onClick={handleEnroll}
                 sx={{ minWidth: 120 }}
               >
-                Enroll Now
+                {t('courseDetail.enrollNow')}
               </Button>
             )}
           </Box>
@@ -309,7 +311,7 @@ const CourseDetail = () => {
       <Card>
         <CardContent>
           <Typography variant="h5" component="h2" sx={{ mb: 3, fontWeight: 600 }}>
-            Course Content
+            {t('courseDetail.courseContent')}
           </Typography>
 
           {course.chapters && course.chapters.length > 0 ? (
@@ -319,10 +321,10 @@ const CourseDetail = () => {
                   <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                     <Box display="flex" alignItems="center" gap={2} sx={{ width: '100%' }}>
                       <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                        Chapter {chapterIndex + 1}: {chapter.title}
+                        {t('courseDetail.chapter', { index: chapterIndex + 1, title: chapter.title })}
                       </Typography>
                       <Chip 
-                        label={`${chapter.sections?.length || 0} sections`} 
+                        label={t('courseDetail.sectionsCount', { count: chapter.sections?.length || 0 })} 
                         size="small" 
                         color="primary" 
                         variant="outlined" 
@@ -343,10 +345,10 @@ const CourseDetail = () => {
                             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                               <Box display="flex" alignItems="center" gap={2} sx={{ width: '100%' }}>
                                 <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-                                  Section {chapterIndex + 1}.{sectionIndex + 1}: {section.title}
+                                  {t('courseDetail.section', { index: `${chapterIndex + 1}.${sectionIndex + 1}`, title: section.title })}
                                 </Typography>
                                 <Chip 
-                                  label={`${section.videos?.length || 0} videos`} 
+                                  label={t('courseDetail.videosCount', { count: section.videos?.length || 0 })} 
                                   size="small" 
                                   color="secondary" 
                                   variant="outlined" 
@@ -398,7 +400,7 @@ const CourseDetail = () => {
                                               {/* Duration chip removed per request */}
                                               {isCompleted && (
                                                 <Chip 
-                                                  label="Completed" 
+                                                  label={t('courseDetail.completed')} 
                                                   size="small" 
                                                   color="success"
                                                 />
@@ -419,7 +421,7 @@ const CourseDetail = () => {
                                                   sx={{ height: 4, borderRadius: 2 }}
                                                 />
                                                 <Typography variant="caption" color="textSecondary">
-                                                  {Math.round(progress?.watchPercentage || 0)}% watched
+                                                  {t('courseDetail.watchedPct', { pct: Math.round(progress?.watchPercentage || 0) })}
                                                 </Typography>
                                               </Box>
                                             )}
@@ -432,9 +434,9 @@ const CourseDetail = () => {
                                             size="small"
                                             startIcon={<PlayIcon />}
                                             disabled={!resolvedVideoId || (!isTeacher && (!isEnrolled || !isVideoUnlocked(resolvedVideoId)))}
-                                            title={!isTeacher && !isVideoUnlocked(resolvedVideoId) ? 'Complete previous videos to unlock' : ''}
+                                            title={!isTeacher && !isVideoUnlocked(resolvedVideoId) ? t('courseDetail.unlockPrev') : ''}
                                           >
-                                            {isWatched ? 'Continue' : 'Start'}
+                                            {isWatched ? t('courseDetail.continue') : t('courseDetail.start')}
                                           </Button>
                                         </ListItem>
                                         
@@ -447,10 +449,10 @@ const CourseDetail = () => {
                                               <Box sx={{ flex: 1, minWidth: 0 }}>
                                                 <Box display="flex" alignItems="center" gap={1} sx={{ mb: 0.5 }}>
                                                   <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                                                    Quiz: {quizInfo.quizTitle || 'Chapter quiz'}
+                                                    {t('courseDetail.quizTitle', { title: quizInfo.quizTitle || 'Chapter quiz' })}
                                                   </Typography>
-                                                  {quizInfo.isRequired && <Chip label="Required" size="small" />}
-                                                  {quizInfo.passed && <Chip label="Passed" size="small" color="success" />}
+                                                  {quizInfo.isRequired && <Chip label={t('courseDetail.required')} size="small" />}
+                                                  {quizInfo.passed && <Chip label={t('courseDetail.passed')} size="small" color="success" />}
                                                 </Box>
                                               </Box>
                                               <Button
@@ -459,9 +461,9 @@ const CourseDetail = () => {
                                                 variant="outlined"
                                                 size="small"
                                                 startIcon={<PlayIcon />}
-                                                disabled={!resolvedVideoId || !quizInfo?.quizId || (!isTeacher && (!isEnrolled || !isVideoUnlocked(resolvedVideoId))) || !(progress?.isCompleted)}
+                                              disabled={!resolvedVideoId || !quizInfo?.quizId || (!isTeacher && (!isEnrolled || !isVideoUnlocked(resolvedVideoId))) || (!isTeacher && !(progress?.isCompleted))}
                                               >
-                                                {quizInfo.passed ? 'Review quiz' : 'Start quiz'}
+                                                {quizInfo.passed ? t('courseDetail.reviewQuiz') : t('courseDetail.startQuiz')}
                                               </Button>
                                             </ListItem>
                                           </List>
@@ -475,11 +477,11 @@ const CourseDetail = () => {
                               ) : (
                                 <Box textAlign="center" sx={{ py: 2 }}>
                                   <Typography variant="body2" color="textSecondary">
-                                    No videos in this section yet
+                                    {t('courseDetail.noVideosInSection')}
                                   </Typography>
                                   {isTeacher && (
                                     <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
-                                      Upload videos to this section to make them available to students
+                                      {t('courseDetail.noContentTeacher')}
                                     </Typography>
                                   )}
                                 </Box>
@@ -491,7 +493,7 @@ const CourseDetail = () => {
                     ) : (
                       <Box textAlign="center" sx={{ py: 2 }}>
                         <Typography variant="body2" color="textSecondary">
-                          No sections in this chapter yet
+                          {t('courseDetail.noSectionsInChapter')}
                         </Typography>
                       </Box>
                     )}
@@ -503,7 +505,7 @@ const CourseDetail = () => {
             // Fallback to old video list if no chapters
             <Box>
               <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>
-                Course Videos
+                {t('courseDetail.courseContent')}
               </Typography>
               <List>
                 {course.videos.map((video, index) => {
@@ -540,7 +542,7 @@ const CourseDetail = () => {
                             {/* Duration chip removed per request */}
                             {isCompleted && (
                               <Chip 
-                                label="Completed" 
+                                label={t('courseDetail.completed')} 
                                 size="small" 
                                 color="success"
                               />
@@ -561,7 +563,7 @@ const CourseDetail = () => {
                                 sx={{ height: 4, borderRadius: 2 }}
                               />
                               <Typography variant="caption" color="textSecondary">
-                                {Math.round(progress?.watchPercentage || 0)}% watched
+                                {t('courseDetail.watchedPct', { pct: Math.round(progress?.watchPercentage || 0) })}
                               </Typography>
                             </Box>
                           )}
@@ -575,7 +577,7 @@ const CourseDetail = () => {
                           startIcon={<PlayIcon />}
                           disabled={!isEnrolled && !isTeacher}
                         >
-                          {isWatched ? 'Continue' : 'Start'}
+                          {isWatched ? t('courseDetail.continue') : t('courseDetail.start')}
                         </Button>
                       </ListItem>
                       
@@ -588,10 +590,10 @@ const CourseDetail = () => {
           ) : (
             <Box textAlign="center" sx={{ py: 4 }}>
               <Typography variant="h6" color="textSecondary">
-                No content available yet
+                {t('courseDetail.noContentTitle')}
               </Typography>
               <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
-                {isTeacher ? 'Add chapters, sections and videos to get started!' : 'Content will be added by the instructor'}
+                {isTeacher ? t('courseDetail.noContentTeacher') : t('courseDetail.noContentStudent')}
               </Typography>
             </Box>
           )}

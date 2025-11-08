@@ -21,9 +21,11 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
+import { useTranslation } from 'react-i18next';
 
 const Dashboard = () => {
   const { user } = useAuth();
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [stats, setStats] = useState({
@@ -154,10 +156,10 @@ const Dashboard = () => {
       {/* Welcome Section */}
       <Box sx={{ mb: 4 }}>
         <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 700 }}>
-          Welcome back, {user?.firstName}!
+          {t('dashboard.welcome', { name: user?.firstName })}
         </Typography>
         <Typography variant="h6" color="textSecondary">
-          Continue your learning journey
+          {t('dashboard.continue')}
         </Typography>
       </Box>
 
@@ -173,7 +175,7 @@ const Dashboard = () => {
                     {stats.totalCourses}
                   </Typography>
                   <Typography variant="body2" color="textSecondary">
-                    Enrolled Courses
+                    {t('dashboard.enrolledCourses')}
                   </Typography>
                 </Box>
               </Box>
@@ -191,7 +193,7 @@ const Dashboard = () => {
                     {stats.totalVideos}
                   </Typography>
                   <Typography variant="body2" color="textSecondary">
-                    Total Videos
+                    {t('dashboard.totalVideos')}
                   </Typography>
                 </Box>
               </Box>
@@ -209,7 +211,7 @@ const Dashboard = () => {
                     {stats.completedVideos}
                   </Typography>
                   <Typography variant="body2" color="textSecondary">
-                    Completed Videos
+                    {t('dashboard.completedVideos')}
                   </Typography>
                 </Box>
               </Box>
@@ -227,7 +229,7 @@ const Dashboard = () => {
                     {formatDuration(stats.totalWatchTime)}
                   </Typography>
                   <Typography variant="body2" color="textSecondary">
-                    Total Watch Time
+                    {t('dashboard.totalWatchTime')}
                   </Typography>
                 </Box>
               </Box>
@@ -240,7 +242,7 @@ const Dashboard = () => {
       <Card sx={{ mb: 4 }}>
         <CardContent>
           <Typography variant="h6" gutterBottom>
-            Overall Learning Progress
+            {t('dashboard.overallProgress')}
           </Typography>
           <Box sx={{ mb: 2 }}>
             <LinearProgress 
@@ -250,7 +252,7 @@ const Dashboard = () => {
             />
           </Box>
           <Typography variant="body2" color="textSecondary">
-            {stats.averageProgress}% average completion across all courses
+            {t('dashboard.avgAcrossCourses', { pct: stats.averageProgress })}
           </Typography>
         </CardContent>
       </Card>
@@ -258,7 +260,7 @@ const Dashboard = () => {
       {/* Enrolled Courses */}
       <Box sx={{ mb: 4 }}>
         <Typography variant="h5" gutterBottom sx={{ fontWeight: 600 }}>
-          Your Enrolled Courses
+          {t('dashboard.yourEnrolled')}
         </Typography>
         
         {enrolledCourses.length > 0 ? (
@@ -286,14 +288,14 @@ const Dashboard = () => {
                     
                     {course.teacher && (
                       <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-                        By {course.teacher.firstName} {course.teacher.lastName}
+                        {t('dashboard.by', { first: course.teacher.firstName, last: course.teacher.lastName })}
                       </Typography>
                     )}
                     
                     <Box sx={{ mb: 2 }}>
                       <Box display="flex" justifyContent="space-between" sx={{ mb: 1 }}>
                         <Typography variant="body2" color="textSecondary">
-                          Progress
+                          {t('dashboard.progress')}
                         </Typography>
                         <Typography variant="body2" color="textSecondary">
                           {course.progress}%
@@ -313,7 +315,7 @@ const Dashboard = () => {
                       fullWidth
                       startIcon={<PlayIcon />}
                     >
-                      Continue Learning
+                      {t('dashboard.continueLearning')}
                     </Button>
                   </CardContent>
                 </Card>
@@ -325,10 +327,10 @@ const Dashboard = () => {
             <CardContent sx={{ textAlign: 'center', py: 4 }}>
               <SchoolIcon sx={{ fontSize: 60, color: 'text.secondary', mb: 2 }} />
               <Typography variant="h6" color="textSecondary" gutterBottom>
-                No courses enrolled yet
+                {t('dashboard.noCoursesTitle')}
               </Typography>
               <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-                Start your learning journey by enrolling in courses
+                {t('dashboard.noCoursesSubtitle')}
               </Typography>
               <Button
                 component={Link}
@@ -336,7 +338,7 @@ const Dashboard = () => {
                 variant="contained"
                 size="large"
               >
-                Browse Courses
+                {t('dashboard.browseCourses')}
               </Button>
             </CardContent>
           </Card>

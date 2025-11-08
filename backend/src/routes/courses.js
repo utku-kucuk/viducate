@@ -21,7 +21,8 @@ const { body } = require('express-validator');
 const courseValidation = [
   body('title').trim().isLength({ min: 3, max: 100 }).withMessage('Title must be between 3 and 100 characters'),
   body('description').trim().isLength({ min: 10, max: 500 }).withMessage('Description must be between 10 and 500 characters'),
-  body('category').trim().notEmpty().withMessage('Category is required'),
+  body('category').optional().trim(),
+  body('department').optional().trim(),
   body('level').isIn(['beginner', 'intermediate', 'advanced']).withMessage('Level must be beginner, intermediate, or advanced')
 ];
 
@@ -29,7 +30,8 @@ const courseValidation = [
 const courseUpdateValidation = [
   body('title').optional().trim().isLength({ min: 3, max: 100 }).withMessage('Title must be between 3 and 100 characters'),
   body('description').optional().trim().isLength({ min: 10, max: 500 }).withMessage('Description must be between 10 and 500 characters'),
-  body('category').optional().trim().notEmpty().withMessage('Category is required when provided'),
+  body('category').optional().trim(),
+  body('department').optional().trim(),
   body('level').optional().isIn(['beginner', 'intermediate', 'advanced']).withMessage('Level must be beginner, intermediate, or advanced'),
   body('chapters').optional()
 ];

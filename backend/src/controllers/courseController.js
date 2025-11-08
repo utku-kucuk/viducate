@@ -6,9 +6,10 @@ const { validationResult } = require('express-validator');
 const getAllCourses = async (req, res) => {
   try {
     const where = {};
-    // Only show published courses to non-teachers
+    // Only show published and not adminDisabled courses to non-teachers/admins
     if (!['teacher', 'admin'].includes(req.user.role)) {
       where.isPublished = true;
+      where.adminDisabled = false;
     }
 
     const courses = await Course.findAll({
@@ -295,18 +296,19 @@ const createCourse = async (req, res) => {
       });
     }
 
-    const { title, description, category, level, chapters, thumbnail, videoIds } = req.body;
+    const { title, description, category, department, level, chapters, thumbnail, videoIds, isPublished } = req.body;
 
     // Create course first
     const course = await Course.create({
       title,
       description,
-      category,
+      category: category || null,
+      department: department || null,
       level,
       chapters: chapters || [],
       thumbnail: thumbnail || null,
       teacherId: req.user.id,
-      isPublished: false
+      isPublished: Boolean(isPublished) || false
     });
     // If client provided pre-uploaded video ids, attach them
     if (Array.isArray(videoIds) && videoIds.length > 0) {
@@ -348,7 +350,7 @@ const createCourse = async (req, res) => {
 const updateCourse = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, description, category, level, chapters, thumbnail, isPublished } = req.body;
+    const { title, description, category, department, level, chapters, thumbnail, isPublished } = req.body;
 
     console.log('Updating course:', id, 'with data:', { title, description, category, level, chapters });
 
@@ -367,7 +369,8 @@ const updateCourse = async (req, res) => {
     // Only update fields that are provided and not empty
     if (title !== undefined && title && title.trim() !== '') updateData.title = title;
     if (description !== undefined && description && description.trim() !== '') updateData.description = description;
-    if (category !== undefined && category && category.trim() !== '') updateData.category = category;
+    if (category !== undefined) updateData.category = category && category.trim() !== '' ? category : null;
+    if (department !== undefined) updateData.department = department && department.trim() !== '' ? department : null;
     if (level !== undefined && level) updateData.level = level;
     if (thumbnail !== undefined) updateData.thumbnail = thumbnail;
     if (chapters !== undefined) {
@@ -382,7 +385,17 @@ const updateCourse = async (req, res) => {
         });
       }
     }
-    if (isPublished !== undefined) updateData.isPublished = Boolean(isPublished);
+    if (isPublished !== undefined) {
+      // Prevent any publish/unpublish if admin locked publishing
+      if (course.adminPublishLocked) {
+        return res.status(403).json({ success: false, message: 'Course publish state is locked by admin.' });
+      }
+      // Prevent publishing if admin disabled
+      if (course.adminDisabled && Boolean(isPublished) === true) {
+        return res.status(403).json({ success: false, message: 'Course is disabled by admin and cannot be published.' });
+      }
+      updateData.isPublished = Boolean(isPublished);
+    }
 
     console.log('Update data:', updateData);
     
@@ -526,7 +539,7 @@ const getCourseById = async (req, res) => {
     // If user is not enrolled and not the teacher, return basic course info only
   if (!isEnrolled && !isTeacher) {
       // Hide unpublished courses from non-enrolled non-teachers
-      if (!course.isPublished) {
+      if (!course.isPublished || course.adminDisabled) {
         return res.status(404).json({ success: false, message: 'Course not found' });
       }
       const basicCourseInfo = {

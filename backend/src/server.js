@@ -3,6 +3,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
+const { DataTypes } = require('sequelize');
 
 const { sequelize } = require('./config/database');
 const authRoutes = require('./routes/auth');
@@ -13,9 +14,10 @@ const progressRoutes = require('./routes/progress');
 const quizRoutes = require('./routes/quizzes');
 const adminRoutes = require('./routes/admin');
 const notesRoutes = require('./routes/notes');
+const metaRoutes = require('./routes/meta');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || (process.env.NODE_ENV === 'development' ? 5001 : 5000);
 
 // When behind a proxy (e.g., CRA dev server), trust proxy so rate limiter can read client IP
 app.set('trust proxy', 1);
@@ -77,10 +79,8 @@ const authLimiter = rateLimit({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Static files for video uploads (development only)
-if (process.env.NODE_ENV === 'development') {
-  app.use('/uploads', express.static('uploads'));
-}
+// Static files for uploads
+app.use('/uploads', express.static('uploads'));
 
 // Handle preflight requests
 app.options('*', cors());
@@ -119,6 +119,7 @@ app.use('/api/progress', progressRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/notes', notesRoutes);
 app.use('/api/quizzes', quizRoutes);
+app.use('/api/meta', metaRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -135,6 +136,22 @@ app.use('*', (req, res) => {
 });
 
 // Database connection and server start
+async function ensureQuestionImageUrlColumn() {
+  try {
+    const qi = sequelize.getQueryInterface();
+    const desc = await qi.describeTable('Questions');
+    if (!desc || !Object.prototype.hasOwnProperty.call(desc, 'imageUrl')) {
+      await qi.addColumn('Questions', 'imageUrl', {
+        type: DataTypes.STRING,
+        allowNull: true
+      });
+      console.log('🛠  Added missing column Questions.imageUrl');
+    }
+  } catch (error) {
+    console.warn('⚠️  Could not ensure Questions.imageUrl column:', error?.message || error);
+  }
+}
+
 async function startServer() {
   try {
     await sequelize.authenticate();
@@ -145,6 +162,9 @@ async function startServer() {
       await sequelize.sync();
       console.log('✅ Database synchronized (no alter).');
     }
+    
+    // Ensure new columns that may not exist on older DBs
+    await ensureQuestionImageUrlColumn();
     
     app.listen(PORT, () => {
       console.log(`🚀 Viducate server running on port ${PORT}`);

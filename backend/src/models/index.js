@@ -11,6 +11,8 @@ const QuizQuestion = require('./QuizQuestion');
 const VideoQuiz = require('./VideoQuiz');
 const QuizAttempt = require('./QuizAttempt');
 const AttemptAnswer = require('./AttemptAnswer');
+const Category = require('./Category');
+const Department = require('./Department');
 
 // User - Course relationships (Teacher creates courses)
 User.hasMany(Course, { 
@@ -155,5 +157,7 @@ module.exports = {
   QuizQuestion,
   VideoQuiz,
   QuizAttempt,
-  AttemptAnswer
+  AttemptAnswer,
+  Category,
+  Department
 };

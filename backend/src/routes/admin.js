@@ -10,7 +10,14 @@ const {
   getAllCoursesAdmin,
   deleteCourseAdmin,
   createUser,
-  bulkCreateUsers
+  bulkCreateUsers,
+  updateCourseAdmin,
+  listCategories,
+  createCategoryAdmin,
+  deleteCategoryAdmin,
+  listDepartments,
+  createDepartmentAdmin,
+  deleteDepartmentAdmin
 } = require('../controllers/adminController');
 const { body } = require('express-validator');
 const multer = require('multer');
@@ -52,5 +59,16 @@ router.delete('/users/:id', auth, requireAdmin, deleteUser);
 // Course management
 router.get('/courses', auth, requireAdmin, getAllCoursesAdmin);
 router.delete('/courses/:id', auth, requireAdmin, deleteCourseAdmin);
+router.put('/courses/:id', auth, requireAdmin, updateCourseAdmin);
+
+// Category management
+router.get('/categories', auth, requireAdmin, listCategories);
+router.post('/categories', auth, requireAdmin, createCategoryAdmin);
+router.delete('/categories/:id', auth, requireAdmin, deleteCategoryAdmin);
+
+// Department management
+router.get('/departments', auth, requireAdmin, listDepartments);
+router.post('/departments', auth, requireAdmin, createDepartmentAdmin);
+router.delete('/departments/:id', auth, requireAdmin, deleteDepartmentAdmin);
 
 module.exports = router;

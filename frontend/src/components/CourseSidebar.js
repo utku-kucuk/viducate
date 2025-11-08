@@ -26,12 +26,14 @@ import {
   Menu as MenuIcon
 } from '@mui/icons-material';
 import axios from 'axios';
+import { useTranslation } from 'react-i18next';
 
 const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }) => {
-  const { user } = useAuth?.() || { user: null };
+  const { user } = useAuth();
   const isTeacher = user && (user.role === 'teacher' || user.role === 'admin');
   const navigate = useNavigate();
   const { courseId } = useParams();
+  const { t } = useTranslation();
   const [expandedChapters, setExpandedChapters] = useState({});
   const [videoProgress, setVideoProgress] = useState({});
   const [loading, setLoading] = useState(true);
@@ -243,25 +245,27 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }
   };
 
   const getVideoIcon = (video, isLocked) => {
+    if (isTeacher) {
+      return <CheckBoxIcon color="success" />;
+    }
     if (isLocked) {
       return <LockIcon color="disabled" />;
     }
-    
     const status = getVideoStatus(video);
     switch (status) {
       case 'completed':
-        return <CheckBoxIcon color="success" />; // persistent tick
+        return <CheckBoxIcon color="success" />;
       case 'in-progress':
-        return <CheckBoxOutlineBlankIcon color="action" />; // unlocked but not completed
+        return <CheckBoxOutlineBlankIcon color="action" />;
       default:
-        return <CheckBoxOutlineBlankIcon color="action" />; // next-up or unlocked
+        return <CheckBoxOutlineBlankIcon color="action" />;
     }
   };
 
   const getVideoTextColor = (video, isLocked, isCurrent) => {
+    if (isTeacher) return isCurrent ? 'primary.main' : 'text.primary';
     if (isCurrent) return 'primary.main';
     if (isLocked) return 'text.disabled';
-    
     const status = getVideoStatus(video);
     switch (status) {
       case 'completed':
@@ -326,7 +330,7 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }
           {sidebarOpen && (
             <Box>
               <Typography variant="h6" noWrap>
-                Course Content
+                {t('courseSidebar.courseContent')}
               </Typography>
               <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
                 <CircularProgress
@@ -337,7 +341,7 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }
                   sx={{ mr: 1 }}
                 />
                 <Typography variant="body2" color="textSecondary">
-                  {courseProgress}% Complete
+                  {t('courseSidebar.completePct', { pct: courseProgress })}
                 </Typography>
               </Box>
             </Box>
@@ -385,7 +389,7 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }
                       {section.videos && section.videos.map((video, videoIndex) => {
                         const isLocked = isVideoLocked(video);
                         const isCurrent = video.id === currentVideoId;
-                        const status = getVideoStatus(video);
+                        const status = isTeacher ? 'completed' : getVideoStatus(video);
                         const quizInfo = videoQuizInfo[(resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id)] || {};
                         
                         const keyId = video?.id || `${chapterIndex}-${sectionIndex}-${videoIndex}`;
@@ -422,15 +426,15 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }
                                   secondary={
                                     isLocked ? (
                                       <Typography variant="caption" color="textSecondary">
-                                        Complete previous videos to unlock
+                                        {t('courseSidebar.lockedMessage')}
                                       </Typography>
                                     ) : status === 'in-progress' ? (
                                       <Typography variant="caption" color="primary">
-                                        In Progress
+                                        {t('courseSidebar.inProgress')}
                                       </Typography>
                                     ) : status === 'completed' ? (
                                       <Typography variant="caption" color="success.main">
-                                        Completed
+                                        {t('courseSidebar.complete')}
                                       </Typography>
                                     ) : null
                                   }
@@ -450,14 +454,14 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }
                                   <ListItemText
                                     primary={
                                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <Typography variant="body2">Quiz: {quizInfo.quizTitle || 'Chapter quiz'}</Typography>
-                                        {quizInfo.isRequired && <Chip label="Required" size="small" />}
+                                        <Typography variant="body2">{t('courseSidebar.quizTitle', { title: quizInfo.quizTitle || 'Chapter quiz' })}</Typography>
+                                        {quizInfo.isRequired && <Chip label={t('courseSidebar.required')} size="small" />}
                                       </Box>
                                     }
                                     secondary={quizInfo.passed ? (
-                                      <Typography variant="caption" color="success.main">Passed</Typography>
+                                      <Typography variant="caption" color="success.main">{t('courseSidebar.passed')}</Typography>
                                     ) : (
-                                      <Typography variant="caption" color="textSecondary">{canStartQuiz ? 'Not completed' : 'Complete previous content first'}</Typography>
+                                      <Typography variant="caption" color="textSecondary">{canStartQuiz ? t('courseSidebar.notCompleted') : t('courseSidebar.completePrevFirst')}</Typography>
                                     )}
                                   />
                                 </ListItemButton>

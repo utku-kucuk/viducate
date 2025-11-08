@@ -26,6 +26,7 @@ import {
   Snackbar,
   CircularProgress,
   IconButton,
+  Switch,
   Select,
   MenuItem,
   FormControl,
@@ -47,18 +48,25 @@ import {
   Refresh as RefreshIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
-  Email as EmailIcon
+  Email as EmailIcon,
+  Visibility as VisibilityIcon
 } from '@mui/icons-material';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
+import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 
 const AdminDashboard = () => {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
   const { user: authUser, token } = useAuth();
   const [tabValue, setTabValue] = useState(0);
   const [stats, setStats] = useState(null);
   const [users, setUsers] = useState([]);
+  const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [usersLoading, setUsersLoading] = useState(false);
+  const [coursesLoading, setCoursesLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
@@ -81,6 +89,78 @@ const AdminDashboard = () => {
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [passwordDialog, setPasswordDialog] = useState({ open: false, email: '', password: '' });
 
+  const TaxonomyManager = ({ type }) => {
+    const [items, setItems] = useState([]);
+    const [loadingList, setLoadingList] = useState(false);
+    const [creating, setCreating] = useState(false);
+    const [name, setName] = useState('');
+    const list = async () => {
+      setLoadingList(true);
+      try {
+        const resp = await axios.get(`/api/admin/${type}`);
+        setItems(resp?.data?.data || []);
+      } catch (e) {
+        setSnackbar({ open: true, message: `Failed to load ${type}`, severity: 'error' });
+      } finally {
+        setLoadingList(false);
+      }
+    };
+    useEffect(() => { list(); }, []);
+    const create = async () => {
+      const v = (name || '').trim();
+      if (!v) return;
+      setCreating(true);
+      try {
+        await axios.post(`/api/admin/${type}`, { name: v });
+        setName('');
+        list();
+      } catch (e) {
+        setSnackbar({ open: true, message: `Failed to create in ${type}`, severity: 'error' });
+      } finally {
+        setCreating(false);
+      }
+    };
+    const remove = async (id) => {
+      if (!window.confirm('Delete this item?')) return;
+      try {
+        await axios.delete(`/api/admin/${type}/${id}`);
+        list();
+      } catch (e) {
+        setSnackbar({ open: true, message: `Failed to delete from ${type}`, severity: 'error' });
+      }
+    };
+    return (
+      <Box>
+        <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+          <TextField size="small" label={t('admin.taxonomy.name', 'Name')} value={name} onChange={(e) => setName(e.target.value)} />
+          <Button variant="contained" onClick={create} disabled={creating}>{creating ? t('admin.taxonomy.creating', 'Creating...') : t('admin.taxonomy.add', 'Add')}</Button>
+          <Button variant="text" onClick={list} disabled={loadingList}>{loadingList ? t('admin.courses.refreshing', 'Refreshing...') : t('admin.courses.refresh', 'Refresh')}</Button>
+        </Box>
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>{t('admin.taxonomy.name', 'Name')}</TableCell>
+                <TableCell>{t('admin.courses.table.actions', 'Actions')}</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {items.map(it => (
+                <TableRow key={it.id} hover>
+                  <TableCell>{it.name}</TableCell>
+                  <TableCell>
+                    <IconButton size="small" color="error" onClick={() => remove(it.id)}>
+                      <DeleteIcon />
+                    </IconButton>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Box>
+    );
+  };
   // Ensure auth token is set before making requests
   useEffect(() => {
     const authToken = token || localStorage.getItem('token');
@@ -141,6 +221,42 @@ const AdminDashboard = () => {
     setTabValue(newValue);
     if (newValue === 1) {
       fetchUsers();
+    } else if (newValue === 2) {
+      fetchCourses();
+    }
+  };
+
+  const fetchCourses = async (pageNum = 1) => {
+    setCoursesLoading(true);
+    try {
+      const resp = await axios.get('/api/admin/courses', { params: { page: pageNum, limit: 50 } });
+      setCourses(resp?.data?.data || []);
+    } catch (e) {
+      setSnackbar({ open: true, message: 'Failed to load courses', severity: 'error' });
+    } finally {
+      setCoursesLoading(false);
+    }
+  };
+
+  const updateCourse = async (course, data) => {
+    try {
+      const resp = await axios.put(`/api/admin/courses/${course.id}`, data);
+      const updated = resp?.data?.data;
+      setCourses(prev => prev.map(c => c.id === course.id ? { ...c, ...updated } : c));
+      setSnackbar({ open: true, message: 'Course updated', severity: 'success' });
+    } catch (e) {
+      setSnackbar({ open: true, message: 'Failed to update course', severity: 'error' });
+    }
+  };
+
+  const deleteCourse = async (course) => {
+    if (!window.confirm(`"${course.title}" will be deleted. Are you sure?`)) return;
+    try {
+      await axios.delete(`/api/admin/courses/${course.id}`);
+      setCourses(prev => prev.filter(c => c.id !== course.id));
+      setSnackbar({ open: true, message: 'Course deleted', severity: 'success' });
+    } catch (e) {
+      setSnackbar({ open: true, message: 'Failed to delete course', severity: 'error' });
     }
   };
 
@@ -160,8 +276,8 @@ const AdminDashboard = () => {
       
       const response = await axios.post('/api/admin/users', newUser);
       
-      // If email was not sent but password is returned, show password dialog
-      if (!response.data.data.emailSent && response.data.data.tempPassword) {
+      // Always show password dialog if backend returned a temp password
+      if (response.data?.data?.tempPassword) {
         setPasswordDialog({
           open: true,
           email: newUser.email,
@@ -282,7 +398,7 @@ const AdminDashboard = () => {
     <Container maxWidth="xl" sx={{ py: 4 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
         <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
-          Admin Dashboard
+          {t('admin.title')}
         </Typography>
         <Box sx={{ display: 'flex', gap: 2 }}>
           <Button
@@ -290,22 +406,24 @@ const AdminDashboard = () => {
             startIcon={<AddIcon />}
             onClick={() => setCreateDialogOpen(true)}
           >
-            Create User
+            {t('admin.createUser')}
           </Button>
           <Button
             variant="outlined"
             startIcon={<UploadIcon />}
             onClick={() => setBulkDialogOpen(true)}
           >
-            Bulk Upload
+            {t('admin.bulkUpload')}
           </Button>
         </Box>
       </Box>
 
       <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
         <Tabs value={tabValue} onChange={handleTabChange}>
-          <Tab label="Dashboard" />
-          <Tab label="User Management" />
+          <Tab label={t('admin.tabs.dashboard')} />
+          <Tab label={t('admin.tabs.userManagement')} />
+          <Tab label={t('admin.courses.title', 'Courses')} />
+          <Tab label={t('admin.taxonomy.title', 'Taxonomy')} />
         </Tabs>
       </Box>
 
@@ -324,13 +442,13 @@ const AdminDashboard = () => {
                     <Box display="flex" alignItems="center" justifyContent="space-between">
                       <Box>
                         <Typography color="textSecondary" gutterBottom>
-                          Total Users
+                          {t('admin.stats.totalUsers')}
                         </Typography>
                         <Typography variant="h4" component="div">
                           {stats.totalUsers?.toLocaleString() || 0}
                         </Typography>
                         <Typography variant="body2" color="success.main">
-                          +{stats.recentActivity?.newUsers || 0} this week
+                          {t('admin.stats.newUsersThisWeek', { count: stats.recentActivity?.newUsers || 0 })}
                         </Typography>
                       </Box>
                       <PeopleIcon sx={{ fontSize: 40, color: 'primary.main' }} />
@@ -345,7 +463,7 @@ const AdminDashboard = () => {
                     <Box display="flex" alignItems="center" justifyContent="space-between">
                       <Box>
                         <Typography color="textSecondary" gutterBottom>
-                          Total Courses
+                          {t('admin.stats.totalCourses')}
                         </Typography>
                         <Typography variant="h4" component="div">
                           {stats.totalCourses || 0}
@@ -363,7 +481,7 @@ const AdminDashboard = () => {
                     <Box display="flex" alignItems="center" justifyContent="space-between">
                       <Box>
                         <Typography color="textSecondary" gutterBottom>
-                          Total Videos
+                          {t('admin.stats.totalVideos')}
                         </Typography>
                         <Typography variant="h4" component="div">
                           {stats.totalVideos?.toLocaleString() || 0}
@@ -381,7 +499,7 @@ const AdminDashboard = () => {
                     <Box display="flex" alignItems="center" justifyContent="space-between">
                       <Box>
                         <Typography color="textSecondary" gutterBottom>
-                          Students
+                          {t('admin.stats.students')}
                         </Typography>
                         <Typography variant="h4" component="div">
                           {stats.totalStudents?.toLocaleString() || 0}
@@ -402,12 +520,12 @@ const AdminDashboard = () => {
           <CardContent>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
               <Typography variant="h6" component="h2" sx={{ fontWeight: 600 }}>
-                User Management
+                {t('admin.tabs.userManagement')}
               </Typography>
               <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
                 <TextField
                   size="small"
-                  placeholder="Search users..."
+                  placeholder={t('admin.userManagement.searchPlaceholder')}
                   value={searchQuery}
                   onChange={handleSearch}
                   sx={{ width: 250 }}
@@ -428,19 +546,19 @@ const AdminDashboard = () => {
                   <Table>
                     <TableHead>
                       <TableRow>
-                        <TableCell>User</TableCell>
-                        <TableCell>Email</TableCell>
-                        <TableCell>Role</TableCell>
-                        <TableCell>Status</TableCell>
-                        <TableCell>Created</TableCell>
-                        <TableCell>Actions</TableCell>
+                        <TableCell>{t('admin.table.user')}</TableCell>
+                        <TableCell>{t('admin.table.email')}</TableCell>
+                        <TableCell>{t('admin.table.role')}</TableCell>
+                        <TableCell>{t('admin.table.status')}</TableCell>
+                        <TableCell>{t('admin.table.created')}</TableCell>
+                        <TableCell>{t('admin.table.actions')}</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
                       {users.length === 0 ? (
                         <TableRow>
                           <TableCell colSpan={6} align="center">
-                            <Typography color="textSecondary">No users found</Typography>
+                            <Typography color="textSecondary">{t('admin.table.noUsersFound')}</Typography>
                           </TableCell>
                         </TableRow>
                       ) : (
@@ -470,14 +588,14 @@ const AdminDashboard = () => {
                               />
                             </TableCell>
                             <TableCell>
-                              <Chip 
-                                label={user.isActive ? 'Active' : 'Inactive'} 
+                            <Chip 
+                              label={user.isActive ? t('admin.table.active') : t('admin.table.inactive')} 
                                 color={user.isActive ? 'success' : 'error'}
                                 size="small"
                               />
                               {user.isPasswordChangeRequired && (
                                 <Chip 
-                                  label="Password Required" 
+                                label={t('admin.table.passwordRequired')} 
                                   color="warning"
                                   size="small"
                                   sx={{ ml: 1 }}
@@ -522,13 +640,90 @@ const AdminDashboard = () => {
         </Card>
       )}
 
+      {tabValue === 2 && (
+        <Card>
+          <CardContent>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h6" component="h2" sx={{ fontWeight: 600 }}>
+                {t('admin.courses.title', 'Courses')}
+              </Typography>
+              <Button variant="text" size="small" onClick={() => fetchCourses()} disabled={coursesLoading}>
+                {coursesLoading ? t('admin.courses.refreshing', 'Refreshing...') : t('admin.courses.refresh', 'Refresh')}
+              </Button>
+            </Box>
+            {coursesLoading ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+                <CircularProgress />
+              </Box>
+            ) : (
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>{t('admin.courses.table.title', 'Title')}</TableCell>
+                      <TableCell>{t('admin.courses.table.teacher', 'Teacher')}</TableCell>
+                      <TableCell>{t('admin.courses.table.category', 'Category')}</TableCell>
+                      <TableCell>{t('admin.courses.table.department', 'Department')}</TableCell>
+                      <TableCell>{t('admin.courses.table.published', 'Published')}</TableCell>
+                      <TableCell>{t('admin.courses.table.actions', 'Actions')}</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {courses.map(course => (
+                      <TableRow key={course.id} hover>
+                        <TableCell>{course.title}</TableCell>
+                        <TableCell>{course.teacher ? `${course.teacher.firstName} ${course.teacher.lastName}` : '-'}</TableCell>
+                        <TableCell>{course.category || '—'}</TableCell>
+                        <TableCell>{course.department || '—'}</TableCell>
+                        <TableCell>
+                          <FormControlLabel
+                            control={
+                              <Switch
+                                checked={!!course.isPublished}
+                                onChange={(e) => updateCourse(course, { isPublished: e.target.checked })}
+                                color="success"
+                              />
+                            }
+                            label={course.isPublished ? t('admin.courses.published', 'Published') : t('admin.courses.draft', 'Draft')}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <IconButton size="small" color="primary" onClick={() => navigate(`/course/${course.id}`)} title={t('admin.courses.preview', 'Preview')}>
+                            <VisibilityIcon />
+                          </IconButton>
+                          <IconButton size="small" color="error" onClick={() => deleteCourse(course)}>
+                            <DeleteIcon />
+                          </IconButton>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {tabValue === 3 && (
+        <Card>
+          <CardContent>
+            <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>{t('admin.taxonomy.categories', 'Categories')}</Typography>
+            <TaxonomyManager type="categories" />
+            <Divider sx={{ my: 3 }} />
+            <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>{t('admin.taxonomy.departments', 'Departments')}</Typography>
+            <TaxonomyManager type="departments" />
+          </CardContent>
+        </Card>
+      )}
+
       {/* Create User Dialog */}
       <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Create New User</DialogTitle>
+        <DialogTitle>{t('admin.createDialog.title')}</DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
             <TextField
-              label="Email"
+              label={t('admin.createDialog.email')}
               type="email"
               fullWidth
               required
@@ -536,29 +731,29 @@ const AdminDashboard = () => {
               onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
             />
             <TextField
-              label="First Name"
+              label={t('admin.createDialog.firstName')}
               fullWidth
               required
               value={newUser.firstName}
               onChange={(e) => setNewUser({ ...newUser, firstName: e.target.value })}
             />
             <TextField
-              label="Last Name"
+              label={t('admin.createDialog.lastName')}
               fullWidth
               required
               value={newUser.lastName}
               onChange={(e) => setNewUser({ ...newUser, lastName: e.target.value })}
             />
             <FormControl fullWidth>
-              <InputLabel>Role</InputLabel>
+              <InputLabel>{t('admin.createDialog.role')}</InputLabel>
               <Select
                 value={newUser.role}
-                label="Role"
+                label={t('admin.createDialog.role')}
                 onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
               >
-                <MenuItem value="student">Student</MenuItem>
-                <MenuItem value="teacher">Teacher</MenuItem>
-                <MenuItem value="admin">Admin</MenuItem>
+                <MenuItem value="student">{t('admin.createDialog.student')}</MenuItem>
+                <MenuItem value="teacher">{t('admin.createDialog.teacher')}</MenuItem>
+                <MenuItem value="admin">{t('admin.createDialog.admin')}</MenuItem>
               </Select>
             </FormControl>
             <FormControlLabel
@@ -568,35 +763,34 @@ const AdminDashboard = () => {
                   onChange={(e) => setNewUser({ ...newUser, sendEmail: e.target.checked })}
                 />
               }
-              label="Send welcome email with credentials"
+              label={t('admin.createDialog.sendWelcome')}
             />
             {!newUser.sendEmail && (
               <Alert severity="info">
-                Password will be generated and returned in the response. Make sure to save it securely.
+                {t('admin.createDialog.passwordInfo')}
               </Alert>
             )}
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
+          <Button onClick={() => setCreateDialogOpen(false)}>{t('admin.createDialog.cancel')}</Button>
           <Button 
             onClick={handleCreateUser} 
             variant="contained" 
             disabled={createLoading}
           >
-            {createLoading ? <CircularProgress size={24} /> : 'Create'}
+            {createLoading ? <CircularProgress size={24} /> : t('admin.createDialog.create')}
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Bulk Upload Dialog */}
       <Dialog open={bulkDialogOpen} onClose={() => setBulkDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Bulk Create Users (CSV)</DialogTitle>
+        <DialogTitle>{t('admin.bulkDialog.title')}</DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
             <Alert severity="info" sx={{ mb: 2 }}>
-              CSV format: email,firstName,lastName,role<br />
-              Example: student@example.com,John,Doe,student
+              {t('admin.bulkDialog.csvInfo')}
             </Alert>
             <input
               type="file"
@@ -606,7 +800,7 @@ const AdminDashboard = () => {
             />
             {csvFile && (
               <Typography variant="body2" color="textSecondary">
-                Selected: {csvFile.name}
+                {t('admin.bulkDialog.selected', { name: csvFile.name })}
               </Typography>
             )}
             <FormControlLabel
@@ -616,31 +810,32 @@ const AdminDashboard = () => {
                   onChange={(e) => setNewUser({ ...newUser, sendEmail: e.target.checked })}
                 />
               }
-              label="Send welcome emails to all users"
+              label={t('admin.bulkDialog.sendWelcomeAll')}
             />
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setBulkDialogOpen(false)}>Cancel</Button>
+          <Button onClick={() => setBulkDialogOpen(false)}>{t('admin.bulkDialog.cancel')}</Button>
           <Button 
             onClick={handleBulkCreate} 
             variant="contained" 
             disabled={bulkLoading || !csvFile}
           >
-            {bulkLoading ? <CircularProgress size={24} /> : 'Upload & Create'}
+            {bulkLoading ? <CircularProgress size={24} /> : t('admin.bulkDialog.uploadCreate')}
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Password Dialog - Shows password when email failed */}
       <Dialog open={passwordDialog.open} onClose={() => setPasswordDialog({ ...passwordDialog, open: false })} maxWidth="sm" fullWidth>
-        <DialogTitle>📧 Email Gönderilemedi - Kullanıcı Bilgileri</DialogTitle>
+        <DialogTitle>{t('admin.passwordDialog.title')}</DialogTitle>
         <DialogContent>
           <Alert severity="warning" sx={{ mb: 2 }}>
             <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
-              Email gönderilemedi!
+              {t('admin.passwordDialog.title')}
             </Typography>
             <Typography variant="body2">
+              {/* Keep as-is: detailed environment note, not localized */}
               Resend test modunda aktif. Sadece kayıtlı email adresinize (utkcursor@gmail.com) gönderebilirsiniz. 
               Diğer email adreslerine göndermek için domain doğrulaması yapmanız gerekiyor.
               <br />
@@ -649,14 +844,14 @@ const AdminDashboard = () => {
           </Alert>
           <Box sx={{ mt: 2 }}>
             <TextField
-              label="Email"
+              label={t('admin.passwordDialog.email')}
               value={passwordDialog.email}
               fullWidth
               disabled
               sx={{ mb: 2 }}
             />
             <TextField
-              label="Şifre"
+              label={t('admin.passwordDialog.password')}
               value={passwordDialog.password}
               fullWidth
               disabled
@@ -669,10 +864,10 @@ const AdminDashboard = () => {
                       variant="outlined"
                       onClick={() => {
                         navigator.clipboard.writeText(passwordDialog.password);
-                        setSnackbar({ open: true, message: 'Şifre kopyalandı!', severity: 'success' });
+                        setSnackbar({ open: true, message: t('admin.passwordDialog.copied'), severity: 'success' });
                       }}
                     >
-                      Kopyala
+                      {t('admin.passwordDialog.copy')}
                     </Button>
                   </InputAdornment>
                 )
@@ -682,7 +877,7 @@ const AdminDashboard = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setPasswordDialog({ ...passwordDialog, open: false })}>
-            Kapat
+            {t('admin.passwordDialog.close')}
           </Button>
         </DialogActions>
       </Dialog>

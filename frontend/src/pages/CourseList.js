@@ -27,9 +27,11 @@ import {
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
+import { useTranslation } from 'react-i18next';
 
 const CourseList = () => {
   const { user, isAuthenticated } = useAuth();
+  const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [levelFilter, setLevelFilter] = useState('all');
@@ -122,7 +124,7 @@ const CourseList = () => {
           {error}
         </Alert>
         <Button variant="contained" onClick={fetchCourses}>
-          Retry
+          {t('courses.retry')}
         </Button>
       </Container>
     );
@@ -131,7 +133,7 @@ const CourseList = () => {
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
       <Typography variant="h4" component="h1" sx={{ mb: 4, fontWeight: 600 }}>
-        Browse Courses
+        {t('courses.browse')}
       </Typography>
 
       {/* Filters */}
@@ -140,7 +142,7 @@ const CourseList = () => {
           <Grid item xs={12} md={4}>
             <TextField
               fullWidth
-              label="Search courses..."
+              label={t('courses.searchPlaceholder')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               variant="outlined"
@@ -148,15 +150,15 @@ const CourseList = () => {
           </Grid>
           <Grid item xs={12} md={4}>
             <FormControl fullWidth>
-              <InputLabel>Category</InputLabel>
+              <InputLabel>{t('courses.category')}</InputLabel>
               <Select
                 value={categoryFilter}
-                label="Category"
+                label={t('courses.category')}
                 onChange={(e) => setCategoryFilter(e.target.value)}
               >
                 {categories.map((category) => (
                   <MenuItem key={category} value={category}>
-                    {category === 'all' ? 'All Categories' : category}
+                    {category === 'all' ? t('courses.allCategories') : category}
                   </MenuItem>
                 ))}
               </Select>
@@ -164,15 +166,15 @@ const CourseList = () => {
           </Grid>
           <Grid item xs={12} md={4}>
             <FormControl fullWidth>
-              <InputLabel>Level</InputLabel>
+              <InputLabel>{t('courses.level')}</InputLabel>
               <Select
                 value={levelFilter}
-                label="Level"
+                label={t('courses.level')}
                 onChange={(e) => setLevelFilter(e.target.value)}
               >
                 {levels.map((level) => (
                   <MenuItem key={level} value={level}>
-                    {level === 'all' ? 'All Levels' : level.charAt(0).toUpperCase() + level.slice(1)}
+                    {level === 'all' ? t('courses.allLevels') : level.charAt(0).toUpperCase() + level.slice(1)}
                   </MenuItem>
                 ))}
               </Select>
@@ -183,7 +185,7 @@ const CourseList = () => {
 
       {/* Results count */}
       <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
-        {filteredCourses.length} courses found
+        {t('courses.results', { count: filteredCourses.length })}
       </Typography>
 
       {/* Course Grid */}
@@ -237,7 +239,7 @@ const CourseList = () => {
 
                 <Box sx={{ mb: 2 }}>
                   <Typography variant="body2" color="textSecondary">
-                    Instructor: {course.teacher?.firstName} {course.teacher?.lastName}
+                    {t('courses.instructor')}: {course.teacher?.firstName} {course.teacher?.lastName}
                   </Typography>
                 </Box>
 
@@ -266,7 +268,7 @@ const CourseList = () => {
 
                 <Box sx={{ mt: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Typography variant="h6" color="success.main" sx={{ fontWeight: 600 }}>
-                    Free
+                    {t('courses.free')}
                   </Typography>
                   
                   <Button
@@ -276,7 +278,7 @@ const CourseList = () => {
                     size="small"
                     startIcon={<PlayIcon />}
                   >
-                    View Course
+                    {t('courses.viewCourse')}
                   </Button>
                 </Box>
               </CardContent>
@@ -288,10 +290,10 @@ const CourseList = () => {
       {filteredCourses.length === 0 && (
         <Box textAlign="center" sx={{ py: 8 }}>
           <Typography variant="h6" color="textSecondary">
-            No courses found matching your criteria
+            {t('courses.emptyTitle')}
           </Typography>
           <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
-            Try adjusting your search or filters
+            {t('courses.emptySubtitle')}
           </Typography>
         </Box>
       )}

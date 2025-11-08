@@ -1,4 +1,4 @@
-const { Quiz, Question, Option, QuizQuestion, Video, VideoQuiz, QuizAttempt, AttemptAnswer, Progress } = require('../models');
+const { Quiz, Question, Option, QuizQuestion, Video, VideoQuiz, QuizAttempt, AttemptAnswer, Progress, Course } = require('../models');
 const { sequelize } = require('../config/database');
 
 async function getMissingQuizTables() {
@@ -69,6 +69,11 @@ const createQuiz = async (req, res) => {
 const addQuestionToQuiz = async (req, res) => {
   const t = await sequelize.transaction();
   try {
+    const missing = await ensureQuizSchema();
+    if (missing.length > 0) {
+      await t.rollback();
+      return res.status(500).json({ error: 'Quiz schema missing tables', details: { missing } });
+    }
     const { quizId } = req.params;
     const { text, explanation, options, imageUrl } = req.body;
     // Ensure quiz exists
@@ -303,11 +308,310 @@ const submitAttempt = async (req, res) => {
 
 module.exports = {
   createQuiz,
+  listMyQuizzes,
+  getQuizDetail,
+  updateQuiz,
+  deleteQuiz,
   addQuestionToQuiz,
   assignQuizToVideo,
+  assignQuizToCourses,
+  unassignQuizFromVideo,
+  unassignQuizFromCourse,
+  assignQuizToVideos,
+  updateQuestion,
+  deleteQuestion,
   getVideoQuiz,
   startAttempt,
   submitAttempt
 };
+
+// List quizzes owned by the teacher
+async function listMyQuizzes(req, res) {
+  try {
+    const teacherId = req.user?.id;
+    const quizzes = await Quiz.findAll({
+      where: { teacherId },
+      order: [['updatedAt', 'DESC']]
+    });
+    // Augment with counts
+    const quizIds = quizzes.map(q => q.id);
+    const links = await VideoQuiz.findAll({ where: { quizId: quizIds } });
+    const linkCount = new Map();
+    links.forEach(l => linkCount.set(l.quizId, (linkCount.get(l.quizId) || 0) + 1));
+    const qq = await QuizQuestion.findAll({ where: { quizId: quizIds } });
+    const qCount = new Map();
+    qq.forEach(x => qCount.set(x.quizId, (qCount.get(x.quizId) || 0) + 1));
+    const data = quizzes.map(q => ({
+      id: q.id,
+      title: q.title,
+      passThreshold: Number(q.passThreshold),
+      shuffleQuestions: !!q.shuffleQuestions,
+      shuffleOptions: !!q.shuffleOptions,
+      isFinal: !!q.isFinal,
+      updatedAt: q.updatedAt,
+      questionCount: qCount.get(q.id) || 0,
+      assignmentCount: linkCount.get(q.id) || 0
+    }));
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('listMyQuizzes error', error);
+    res.status(500).json({ error: 'Failed to list quizzes' });
+  }
+}
+
+// Get quiz detail with questions/options (for teacher)
+async function getQuizDetail(req, res) {
+  try {
+    const { quizId } = req.params;
+    const quiz = await Quiz.findByPk(quizId);
+    if (!quiz) return res.status(404).json({ error: 'Quiz not found' });
+    if (quiz.teacherId && quiz.teacherId !== req.user.id) return res.status(403).json({ error: 'Not your quiz' });
+    const links = await QuizQuestion.findAll({ where: { quizId }, order: [['order', 'ASC']] });
+    const questionIds = links.map(l => l.questionId);
+    const questions = await Question.findAll({ where: { id: questionIds } });
+    const options = await Option.findAll({ where: { questionId: questionIds } });
+    const byQ = new Map();
+    options.forEach(o => {
+      const arr = byQ.get(o.questionId) || [];
+      arr.push({ id: o.id, text: o.text, isCorrect: !!o.isCorrect });
+      byQ.set(o.questionId, arr);
+    });
+    const items = links.map(l => {
+      const q = questions.find(x => x.id === l.questionId);
+      if (!q) return null;
+      return {
+        id: q.id,
+        text: q.text,
+        imageUrl: q.imageUrl || null,
+        options: (byQ.get(q.id) || [])
+      };
+    }).filter(Boolean);
+    res.json({ success: true, data: { quiz: {
+      id: quiz.id,
+      title: quiz.title,
+      description: quiz.description,
+      passThreshold: Number(quiz.passThreshold),
+      timeLimitSec: quiz.timeLimitSec,
+      maxAttempts: quiz.maxAttempts,
+      shuffleQuestions: !!quiz.shuffleQuestions,
+      shuffleOptions: !!quiz.shuffleOptions,
+      isFinal: !!quiz.isFinal
+    }, questions: items } });
+  } catch (error) {
+    console.error('getQuizDetail error', error);
+    res.status(500).json({ error: 'Failed to get quiz detail' });
+  }
+}
+
+// Update quiz metadata
+async function updateQuiz(req, res) {
+  try {
+    const { quizId } = req.params;
+    const quiz = await Quiz.findByPk(quizId);
+    if (!quiz) return res.status(404).json({ error: 'Quiz not found' });
+    if (quiz.teacherId && quiz.teacherId !== req.user.id) return res.status(403).json({ error: 'Not your quiz' });
+    const allowed = ['title', 'description', 'passThreshold', 'timeLimitSec', 'maxAttempts', 'shuffleQuestions', 'shuffleOptions', 'isFinal'];
+    const updates = {};
+    for (const key of allowed) {
+      if (req.body.hasOwnProperty(key)) updates[key] = req.body[key];
+    }
+    await quiz.update(updates);
+    res.json({ success: true, data: quiz });
+  } catch (error) {
+    console.error('updateQuiz error', error);
+    res.status(500).json({ error: 'Failed to update quiz' });
+  }
+}
+
+// Delete quiz and its relations
+async function deleteQuiz(req, res) {
+  const t = await sequelize.transaction();
+  try {
+    const { quizId } = req.params;
+    const quiz = await Quiz.findByPk(quizId, { transaction: t });
+    if (!quiz) { await t.rollback(); return res.status(404).json({ error: 'Quiz not found' }); }
+    if (quiz.teacherId && quiz.teacherId !== req.user.id) { await t.rollback(); return res.status(403).json({ error: 'Not your quiz' }); }
+    const qlinks = await QuizQuestion.findAll({ where: { quizId }, transaction: t });
+    const questionIds = qlinks.map(l => l.questionId);
+    // Remove assignments
+    await VideoQuiz.destroy({ where: { quizId }, transaction: t });
+    // Remove attempts (answers will cascade)
+    await QuizAttempt.destroy({ where: { quizId }, transaction: t });
+    // Remove quiz-question links
+    await QuizQuestion.destroy({ where: { quizId }, transaction: t });
+    // Remove options and questions
+    if (questionIds.length > 0) {
+      await Option.destroy({ where: { questionId: questionIds }, transaction: t });
+      await Question.destroy({ where: { id: questionIds }, transaction: t });
+    }
+    // Remove quiz
+    await Quiz.destroy({ where: { id: quizId }, transaction: t });
+    await t.commit();
+    res.json({ success: true });
+  } catch (error) {
+    await t.rollback();
+    console.error('deleteQuiz error', error);
+    res.status(500).json({ error: 'Failed to delete quiz' });
+  }
+}
+
+// Assign quiz to all videos in given courses
+async function assignQuizToCourses(req, res) {
+  const t = await sequelize.transaction();
+  try {
+    const { quizId } = req.params;
+    const { courseIds, isRequired, unlockNextOnPass } = req.body || {};
+    if (!Array.isArray(courseIds) || courseIds.length === 0) {
+      await t.rollback();
+      return res.status(400).json({ error: 'courseIds must be a non-empty array' });
+    }
+    const quiz = await Quiz.findByPk(quizId, { transaction: t });
+    if (!quiz) { await t.rollback(); return res.status(404).json({ error: 'Quiz not found' }); }
+    if (quiz.teacherId && quiz.teacherId !== req.user.id) { await t.rollback(); return res.status(403).json({ error: 'Not your quiz' }); }
+    // Load all videos of those courses
+    const videos = await Video.findAll({ where: { courseId: courseIds }, transaction: t });
+    for (const v of videos) {
+      // eslint-disable-next-line no-await-in-loop
+      await VideoQuiz.upsert({
+        videoId: v.id,
+        quizId,
+        isRequired: isRequired !== undefined ? !!isRequired : true,
+        unlockNextOnPass: unlockNextOnPass !== undefined ? !!unlockNextOnPass : true
+      }, { transaction: t });
+    }
+    await t.commit();
+    res.json({ success: true, data: { assignedVideos: videos.length } });
+  } catch (error) {
+    await t.rollback();
+    console.error('assignQuizToCourses error', error);
+    res.status(500).json({ error: 'Failed to assign quiz to courses' });
+  }
+}
+
+// Unassign quiz from a specific video
+async function unassignQuizFromVideo(req, res) {
+  try {
+    const { quizId } = req.params;
+    const { videoId } = req.query;
+    if (!videoId) return res.status(400).json({ error: 'videoId is required' });
+    const link = await VideoQuiz.findOne({ where: { quizId, videoId } });
+    if (!link) return res.status(404).json({ error: 'Assignment not found' });
+    await VideoQuiz.destroy({ where: { id: link.id } });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('unassignQuizFromVideo error', error);
+    res.status(500).json({ error: 'Failed to unassign quiz from video' });
+  }
+}
+
+// Unassign quiz from all videos in a course
+async function unassignQuizFromCourse(req, res) {
+  try {
+    const { quizId, courseId } = req.params;
+    // Get videos in course
+    const videos = await Video.findAll({ where: { courseId } });
+    const videoIds = videos.map(v => v.id);
+    await VideoQuiz.destroy({ where: { quizId, videoId: videoIds } });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('unassignQuizFromCourse error', error);
+    res.status(500).json({ error: 'Failed to unassign quiz from course' });
+  }
+}
+
+// Assign quiz to specific videos (bulk)
+async function assignQuizToVideos(req, res) {
+  const t = await sequelize.transaction();
+  try {
+    const { quizId } = req.params;
+    const { videoIds, isRequired, unlockNextOnPass } = req.body || {};
+    if (!Array.isArray(videoIds) || videoIds.length === 0) {
+      await t.rollback();
+      return res.status(400).json({ error: 'videoIds must be a non-empty array' });
+    }
+    const quiz = await Quiz.findByPk(quizId, { transaction: t });
+    if (!quiz) { await t.rollback(); return res.status(404).json({ error: 'Quiz not found' }); }
+    if (quiz.teacherId && quiz.teacherId !== req.user.id) { await t.rollback(); return res.status(403).json({ error: 'Not your quiz' }); }
+    const videos = await Video.findAll({ where: { id: videoIds }, transaction: t });
+    for (const v of videos) {
+      // eslint-disable-next-line no-await-in-loop
+      await VideoQuiz.upsert({
+        videoId: v.id,
+        quizId,
+        isRequired: isRequired !== undefined ? !!isRequired : true,
+        unlockNextOnPass: unlockNextOnPass !== undefined ? !!unlockNextOnPass : true
+      }, { transaction: t });
+    }
+    await t.commit();
+    res.json({ success: true, data: { assignedVideos: videos.length } });
+  } catch (error) {
+    await t.rollback();
+    console.error('assignQuizToVideos error', error);
+    res.status(500).json({ error: 'Failed to assign quiz to videos' });
+  }
+}
+
+// Update a question (text, imageUrl, options)
+async function updateQuestion(req, res) {
+  const t = await sequelize.transaction();
+  try {
+    const { quizId, questionId } = req.params;
+    const { text, imageUrl, options } = req.body || {};
+    const quiz = await Quiz.findByPk(quizId, { transaction: t });
+    if (!quiz) { await t.rollback(); return res.status(404).json({ error: 'Quiz not found' }); }
+    if (quiz.teacherId && quiz.teacherId !== req.user.id) { await t.rollback(); return res.status(403).json({ error: 'Not your quiz' }); }
+    const link = await QuizQuestion.findOne({ where: { quizId, questionId }, transaction: t });
+    if (!link) { await t.rollback(); return res.status(404).json({ error: 'Question not part of quiz' }); }
+    const question = await Question.findByPk(questionId, { transaction: t });
+    if (!question) { await t.rollback(); return res.status(404).json({ error: 'Question not found' }); }
+    const updates = {};
+    if (typeof text === 'string') updates.text = text;
+    if (imageUrl !== undefined) updates.imageUrl = imageUrl || null;
+    if (Object.keys(updates).length > 0) {
+      await question.update(updates, { transaction: t });
+    }
+    if (Array.isArray(options)) {
+      if (options.length !== 4) { await t.rollback(); return res.status(400).json({ error: 'Exactly 4 options are required' }); }
+      const invalidOptionText = options.some(o => !o || typeof o.text !== 'string' || o.text.trim().length === 0);
+      if (invalidOptionText) { await t.rollback(); return res.status(400).json({ error: 'All options must have non-empty text' }); }
+      const hasCorrect = options.some(o => o && o.isCorrect === true);
+      const correctCount = options.filter(o => o && o.isCorrect === true).length;
+      if (!hasCorrect || correctCount !== 1) { await t.rollback(); return res.status(400).json({ error: 'Exactly one option must be marked correct' }); }
+      await Option.destroy({ where: { questionId }, transaction: t });
+      for (const opt of options) {
+        // eslint-disable-next-line no-await-in-loop
+        await Option.create({ questionId, text: opt.text, isCorrect: !!opt.isCorrect }, { transaction: t });
+      }
+    }
+    await t.commit();
+    res.json({ success: true });
+  } catch (error) {
+    await t.rollback();
+    console.error('updateQuestion error', error);
+    res.status(500).json({ error: 'Failed to update question' });
+  }
+}
+
+// Delete a question from quiz
+async function deleteQuestion(req, res) {
+  const t = await sequelize.transaction();
+  try {
+    const { quizId, questionId } = req.params;
+    const quiz = await Quiz.findByPk(quizId, { transaction: t });
+    if (!quiz) { await t.rollback(); return res.status(404).json({ error: 'Quiz not found' }); }
+    if (quiz.teacherId && quiz.teacherId !== req.user.id) { await t.rollback(); return res.status(403).json({ error: 'Not your quiz' }); }
+    const link = await QuizQuestion.findOne({ where: { quizId, questionId }, transaction: t });
+    if (!link) { await t.rollback(); return res.status(404).json({ error: 'Question not part of quiz' }); }
+    await Option.destroy({ where: { questionId }, transaction: t });
+    await QuizQuestion.destroy({ where: { quizId, questionId }, transaction: t });
+    await Question.destroy({ where: { id: questionId }, transaction: t });
+    await t.commit();
+    res.json({ success: true });
+  } catch (error) {
+    await t.rollback();
+    console.error('deleteQuestion error', error);
+    res.status(500).json({ error: 'Failed to delete question' });
+  }
+}
 
 

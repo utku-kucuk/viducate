@@ -17,8 +17,10 @@ import {
 import { Link as RouterLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
+import { useTranslation } from 'react-i18next';
 
 const Login = () => {
+  const { t } = useTranslation();
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -128,11 +130,11 @@ const Login = () => {
           }}
         >
           <Typography component="h1" variant="h4" sx={{ mb: 3, fontWeight: 600 }}>
-            Welcome Back
+            {t('auth.welcomeBack')}
           </Typography>
           
           <Typography variant="body1" color="text.secondary" sx={{ mb: 4, textAlign: 'center' }}>
-            Sign in to continue your learning journey
+            {t('auth.signInSubtitle')}
           </Typography>
 
           {error && (
@@ -147,7 +149,7 @@ const Login = () => {
               required
               fullWidth
               id="email"
-              label="Email Address"
+              label={t('auth.emailAddress')}
               name="email"
               autoComplete="email"
               autoFocus
@@ -162,7 +164,7 @@ const Login = () => {
               required
               fullWidth
               name="password"
-              label="Password"
+              label={t('auth.password')}
               type="password"
               id="password"
               autoComplete="current-password"
@@ -180,26 +182,19 @@ const Login = () => {
               disabled={loading}
               sx={{ mb: 3, py: 1.5 }}
             >
-              {loading ? 'Signing In...' : 'Sign In'}
+              {loading ? t('auth.signingIn') : t('auth.signIn')}
             </Button>
           </Box>
 
           <Divider sx={{ width: '100%', my: 2 }}>
             <Typography variant="body2" color="text.secondary">
-              OR
+              {t('auth.or')}
             </Typography>
           </Divider>
 
           <Box sx={{ width: '100%', textAlign: 'center' }}>
-            <Typography variant="body2" sx={{ mb: 2 }}>
-              Don't have an account?{' '}
-              <Link component={RouterLink} to="/register" variant="body2">
-                Sign up here
-              </Link>
-            </Typography>
-            
             <Link component={RouterLink} to="/forgot-password" variant="body2">
-              Forgot your password?
+              {t('auth.forgotPassword')}
             </Link>
           </Box>
         </Paper>
@@ -213,14 +208,14 @@ const Login = () => {
         fullWidth
         disableEscapeKeyDown
       >
-        <DialogTitle>Şifre Değiştirme Zorunlu</DialogTitle>
+        <DialogTitle>{t('auth.passwordChangeRequired')}</DialogTitle>
         <DialogContent>
           <Alert severity="warning" sx={{ mb: 3 }}>
-            İlk girişinizde güvenliğiniz için şifrenizi değiştirmeniz gerekmektedir.
+            {t('auth.passwordChangeNotice')}
           </Alert>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <TextField
-              label="Mevcut Şifre"
+              label={t('auth.currentPassword')}
               type="password"
               fullWidth
               value={passwordChangeData.currentPassword}
@@ -234,7 +229,7 @@ const Login = () => {
               helperText={passwordErrors.currentPassword}
             />
             <TextField
-              label="Yeni Şifre"
+              label={t('auth.newPassword')}
               type="password"
               fullWidth
               value={passwordChangeData.newPassword}
@@ -245,10 +240,10 @@ const Login = () => {
                 }
               }}
               error={!!passwordErrors.newPassword}
-              helperText={passwordErrors.newPassword || 'En az 6 karakter olmalıdır'}
+              helperText={passwordErrors.newPassword || ''}
             />
             <TextField
-              label="Yeni Şifre (Tekrar)"
+              label={t('auth.confirmPassword')}
               type="password"
               fullWidth
               value={passwordChangeData.confirmPassword}
@@ -270,17 +265,17 @@ const Login = () => {
               const newErrors = {};
               
               if (!passwordChangeData.currentPassword) {
-                newErrors.currentPassword = 'Mevcut şifre gereklidir';
+                newErrors.currentPassword = t('auth.currentPassword') + ' *';
               }
               
               if (!passwordChangeData.newPassword) {
-                newErrors.newPassword = 'Yeni şifre gereklidir';
+                newErrors.newPassword = t('auth.newPassword') + ' *';
               } else if (passwordChangeData.newPassword.length < 6) {
-                newErrors.newPassword = 'Şifre en az 6 karakter olmalıdır';
+                newErrors.newPassword = '6+';
               }
               
               if (passwordChangeData.newPassword !== passwordChangeData.confirmPassword) {
-                newErrors.confirmPassword = 'Şifreler eşleşmiyor';
+                newErrors.confirmPassword = t('auth.confirmPassword') + ' !';
               }
               
               if (Object.keys(newErrors).length > 0) {
@@ -317,9 +312,9 @@ const Login = () => {
                 
                 navigate(redirectPath, { replace: true });
               } catch (error) {
-                const errorMessage = error.response?.data?.error || 'Şifre değiştirme başarısız';
+                const errorMessage = error.response?.data?.error || 'Password change failed';
                 if (errorMessage.includes('Current password')) {
-                  setPasswordErrors({ currentPassword: 'Mevcut şifre yanlış' });
+                  setPasswordErrors({ currentPassword: 'Incorrect current password' });
                 } else {
                   setPasswordErrors({ newPassword: errorMessage });
                 }
@@ -330,7 +325,7 @@ const Login = () => {
             variant="contained"
             disabled={passwordLoading}
           >
-            {passwordLoading ? 'Değiştiriliyor...' : 'Şifreyi Değiştir'}
+            {passwordLoading ? t('auth.changing') : t('auth.changePassword')}
           </Button>
         </DialogActions>
       </Dialog>

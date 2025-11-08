@@ -16,8 +16,10 @@ import {
 } from '@mui/material';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useTranslation } from 'react-i18next';
 
 const Register = () => {
+  const { t } = useTranslation();
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -125,11 +127,11 @@ const Register = () => {
           }}
         >
           <Typography component="h1" variant="h4" sx={{ mb: 3, fontWeight: 600 }}>
-            Join Viducate
+            {t('auth.joinTitle')}
           </Typography>
           
           <Typography variant="body1" color="text.secondary" sx={{ mb: 4, textAlign: 'center' }}>
-            Create your account and start your learning journey today
+            {t('auth.joinSubtitle')}
           </Typography>
 
           {error && (
@@ -145,7 +147,7 @@ const Register = () => {
                   required
                   fullWidth
                   id="firstName"
-                  label="First Name"
+                  label={t('profile.firstName')}
                   name="firstName"
                   autoComplete="given-name"
                   value={formData.firstName}
@@ -159,7 +161,7 @@ const Register = () => {
                   required
                   fullWidth
                   id="lastName"
-                  label="Last Name"
+                  label={t('profile.lastName')}
                   name="lastName"
                   autoComplete="family-name"
                   value={formData.lastName}
@@ -175,7 +177,7 @@ const Register = () => {
               required
               fullWidth
               id="email"
-              label="Email Address"
+              label={t('auth.emailAddress')}
               name="email"
               autoComplete="email"
               value={formData.email}
@@ -186,17 +188,17 @@ const Register = () => {
             />
 
             <FormControl fullWidth margin="normal" sx={{ mb: 2 }}>
-              <InputLabel id="role-label">I am a</InputLabel>
+              <InputLabel id="role-label">{t('auth.iAmA')}</InputLabel>
               <Select
                 labelId="role-label"
                 id="role"
                 name="role"
                 value={formData.role}
-                label="I am a"
+                label={t('auth.iAmA')}
                 onChange={handleChange}
               >
-                <MenuItem value="student">Student</MenuItem>
-                <MenuItem value="teacher">Teacher</MenuItem>
+                <MenuItem value="student">{t('auth.student')}</MenuItem>
+                <MenuItem value="teacher">{t('auth.teacher')}</MenuItem>
               </Select>
             </FormControl>
 
@@ -205,7 +207,7 @@ const Register = () => {
               required
               fullWidth
               name="password"
-              label="Password"
+              label={t('auth.password')}
               type="password"
               id="password"
               autoComplete="new-password"
@@ -221,7 +223,7 @@ const Register = () => {
               required
               fullWidth
               name="confirmPassword"
-              label="Confirm Password"
+              label={t('auth.confirmPassword')}
               type="password"
               id="confirmPassword"
               autoComplete="new-password"
@@ -240,15 +242,15 @@ const Register = () => {
               disabled={loading}
               sx={{ mb: 3, py: 1.5 }}
             >
-              {loading ? 'Creating Account...' : 'Create Account'}
+              {loading ? t('auth.creatingAccount') : t('auth.createAccount')}
             </Button>
           </Box>
 
           <Box sx={{ width: '100%', textAlign: 'center' }}>
             <Typography variant="body2">
-              Already have an account?{' '}
+              {t('auth.alreadyHaveAccount')}{' '}
               <Link component={RouterLink} to="/login" variant="body2">
-                Sign in here
+                {t('auth.signInHere')}
               </Link>
             </Typography>
           </Box>

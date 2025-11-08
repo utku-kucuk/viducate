@@ -15,8 +15,10 @@ import {
   LinkedIn as LinkedInIcon,
   YouTube as YouTubeIcon
 } from '@mui/icons-material';
+import { useTranslation } from 'react-i18next';
 
 const Footer = () => {
+  const { t } = useTranslation();
   return (
     <Box
       component="footer"
@@ -38,8 +40,7 @@ const Footer = () => {
               </Typography>
             </Box>
             <Typography variant="body2" sx={{ mb: 3, opacity: 0.8 }}>
-              Empowering learners worldwide with high-quality video education. 
-              Join millions of students and instructors on our global learning platform.
+              {t('footer.tagline')}
             </Typography>
             <Box display="flex" gap={1}>
               <IconButton sx={{ color: 'white' }}>
@@ -60,20 +61,20 @@ const Footer = () => {
           {/* Quick Links */}
           <Grid item xs={12} sm={6} md={2}>
             <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-              Platform
+              {t('footer.platform')}
             </Typography>
             <Box display="flex" flexDirection="column" gap={1}>
               <Link href="/courses" color="inherit" sx={{ textDecoration: 'none', opacity: 0.8, '&:hover': { opacity: 1 } }}>
-                Browse Courses
+                {t('footer.browseCourses')}
               </Link>
               <Link href="/about" color="inherit" sx={{ textDecoration: 'none', opacity: 0.8, '&:hover': { opacity: 1 } }}>
-                About Us
+                {t('footer.about')}
               </Link>
               <Link href="/contact" color="inherit" sx={{ textDecoration: 'none', opacity: 0.8, '&:hover': { opacity: 1 } }}>
-                Contact
+                {t('footer.contact')}
               </Link>
               <Link href="/blog" color="inherit" sx={{ textDecoration: 'none', opacity: 0.8, '&:hover': { opacity: 1 } }}>
-                Blog
+                {t('footer.blog')}
               </Link>
             </Box>
           </Grid>
@@ -81,20 +82,20 @@ const Footer = () => {
           {/* Support */}
           <Grid item xs={12} sm={6} md={2}>
             <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-              Support
+              {t('footer.support')}
             </Typography>
             <Box display="flex" flexDirection="column" gap={1}>
               <Link href="/help" color="inherit" sx={{ textDecoration: 'none', opacity: 0.8, '&:hover': { opacity: 1 } }}>
-                Help Center
+                {t('footer.helpCenter')}
               </Link>
               <Link href="/faq" color="inherit" sx={{ textDecoration: 'none', opacity: 0.8, '&:hover': { opacity: 1 } }}>
-                FAQ
+                {t('footer.faq')}
               </Link>
               <Link href="/support" color="inherit" sx={{ textDecoration: 'none', opacity: 0.8, '&:hover': { opacity: 1 } }}>
-                Contact Support
+                {t('footer.contactSupport')}
               </Link>
               <Link href="/community" color="inherit" sx={{ textDecoration: 'none', opacity: 0.8, '&:hover': { opacity: 1 } }}>
-                Community
+                {t('footer.community')}
               </Link>
             </Box>
           </Grid>
@@ -102,20 +103,20 @@ const Footer = () => {
           {/* For Instructors */}
           <Grid item xs={12} sm={6} md={2}>
             <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-              For Instructors
+              {t('footer.forInstructors')}
             </Typography>
             <Box display="flex" flexDirection="column" gap={1}>
               <Link href="/teach" color="inherit" sx={{ textDecoration: 'none', opacity: 0.8, '&:hover': { opacity: 1 } }}>
-                Start Teaching
+                {t('footer.startTeaching')}
               </Link>
               <Link href="/instructor-guidelines" color="inherit" sx={{ textDecoration: 'none', opacity: 0.8, '&:hover': { opacity: 1 } }}>
-                Guidelines
+                {t('footer.guidelines')}
               </Link>
               <Link href="/instructor-resources" color="inherit" sx={{ textDecoration: 'none', opacity: 0.8, '&:hover': { opacity: 1 } }}>
-                Resources
+                {t('footer.resources')}
               </Link>
               <Link href="/instructor-community" color="inherit" sx={{ textDecoration: 'none', opacity: 0.8, '&:hover': { opacity: 1 } }}>
-                Community
+                {t('footer.community')}
               </Link>
             </Box>
           </Grid>
@@ -123,20 +124,20 @@ const Footer = () => {
           {/* Legal */}
           <Grid item xs={12} sm={6} md={2}>
             <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-              Legal
+              {t('footer.legal')}
             </Typography>
             <Box display="flex" flexDirection="column" gap={1}>
               <Link href="/privacy" color="inherit" sx={{ textDecoration: 'none', opacity: 0.8, '&:hover': { opacity: 1 } }}>
-                Privacy Policy
+                {t('footer.privacy')}
               </Link>
               <Link href="/terms" color="inherit" sx={{ textDecoration: 'none', opacity: 0.8, '&:hover': { opacity: 1 } }}>
-                Terms of Service
+                {t('footer.terms')}
               </Link>
               <Link href="/cookies" color="inherit" sx={{ textDecoration: 'none', opacity: 0.8, '&:hover': { opacity: 1 } }}>
-                Cookie Policy
+                {t('footer.cookies')}
               </Link>
               <Link href="/accessibility" color="inherit" sx={{ textDecoration: 'none', opacity: 0.8, '&:hover': { opacity: 1 } }}>
-                Accessibility
+                {t('footer.accessibility')}
               </Link>
             </Box>
           </Grid>
@@ -147,18 +148,18 @@ const Footer = () => {
         {/* Bottom Footer */}
         <Box display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={2}>
           <Typography variant="body2" sx={{ opacity: 0.8 }}>
-            © 2024 Viducate. All rights reserved.
+            {t('footer.copyright')}
           </Typography>
           
           <Box display="flex" gap={3}>
             <Link href="/sitemap" color="inherit" sx={{ textDecoration: 'none', opacity: 0.8, '&:hover': { opacity: 1 } }}>
-              Sitemap
+              {t('footer.sitemap')}
             </Link>
             <Link href="/status" color="inherit" sx={{ textDecoration: 'none', opacity: 0.8, '&:hover': { opacity: 1 } }}>
-              System Status
+              {t('footer.systemStatus')}
             </Link>
             <Link href="/careers" color="inherit" sx={{ textDecoration: 'none', opacity: 0.8, '&:hover': { opacity: 1 } }}>
-              Careers
+              {t('footer.careers')}
             </Link>
           </Box>
         </Box>

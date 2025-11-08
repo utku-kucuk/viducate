@@ -24,8 +24,10 @@ import {
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
+import { useTranslation } from 'react-i18next';
 
 const Profile = () => {
+  const { t } = useTranslation();
   const { user, updateProfile } = useAuth();
   const [tabValue, setTabValue] = useState(0);
   const [isEditing, setIsEditing] = useState(false);
@@ -168,7 +170,7 @@ const Profile = () => {
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
       <Typography variant="h4" component="h1" sx={{ mb: 4, fontWeight: 600 }}>
-        Profil Ayarları
+        {t('profile.settings')}
       </Typography>
 
       {message && (
@@ -183,8 +185,8 @@ const Profile = () => {
 
       <Card sx={{ mb: 3 }}>
         <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)}>
-          <Tab label="Profil Bilgileri" icon={<EditIcon />} iconPosition="start" />
-          <Tab label="Şifre Değiştir" icon={<LockIcon />} iconPosition="start" />
+          <Tab label={t('profile.tabs.profileInfo')} icon={<EditIcon />} iconPosition="start" />
+          <Tab label={t('profile.tabs.changePassword')} icon={<LockIcon />} iconPosition="start" />
         </Tabs>
       </Card>
 
@@ -196,7 +198,7 @@ const Profile = () => {
             <CardContent>
               <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 3 }}>
                 <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                  Personal Information
+                  {t('profile.personalInformation')}
                 </Typography>
                 {!isEditing ? (
                   <Button
@@ -204,7 +206,7 @@ const Profile = () => {
                     startIcon={<EditIcon />}
                     onClick={() => setIsEditing(true)}
                   >
-                    Edit Profile
+                    {t('profile.editProfile')}
                   </Button>
                 ) : (
                   <Box display="flex" gap={1}>
@@ -214,14 +216,14 @@ const Profile = () => {
                       onClick={handleSave}
                       disabled={loading}
                     >
-                      {loading ? 'Saving...' : 'Save Changes'}
+                      {loading ? t('profile.saving') : t('profile.saveChanges')}
                     </Button>
                     <Button
                       variant="outlined"
                       startIcon={<CancelIcon />}
                       onClick={handleCancel}
                     >
-                      Cancel
+                      {t('profile.cancel')}
                     </Button>
                   </Box>
                 )}
@@ -231,7 +233,7 @@ const Profile = () => {
                 <Grid item xs={12} sm={6}>
                   <TextField
                     fullWidth
-                    label="First Name"
+                    label={t('profile.firstName')}
                     name="firstName"
                     value={formData.firstName}
                     onChange={handleChange}
@@ -243,7 +245,7 @@ const Profile = () => {
                 <Grid item xs={12} sm={6}>
                   <TextField
                     fullWidth
-                    label="Last Name"
+                    label={t('profile.lastName')}
                     name="lastName"
                     value={formData.lastName}
                     onChange={handleChange}
@@ -255,29 +257,29 @@ const Profile = () => {
                 <Grid item xs={12}>
                   <TextField
                     fullWidth
-                    label="Email"
+                    label={t('profile.email')}
                     value={user?.email || ''}
                     disabled
-                    helperText="Email cannot be changed"
+                    helperText={t('profile.emailReadonly')}
                   />
                 </Grid>
                 <Grid item xs={12}>
                   <TextField
                     fullWidth
-                    label="Bio"
+                    label={t('profile.bio')}
                     name="bio"
                     value={formData.bio}
                     onChange={handleChange}
                     multiline
                     rows={4}
                     disabled={!isEditing}
-                    helperText="Tell us about yourself"
+                    helperText={t('profile.bioHelper')}
                   />
                 </Grid>
                 <Grid item xs={12}>
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                     <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                      Profil Resmi
+                      {t('profile.profilePicture')}
                     </Typography>
                     {!isEditing ? (
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -314,7 +316,7 @@ const Profile = () => {
                             startIcon={<UploadIcon />}
                             disabled={uploadingPicture}
                           >
-                            {uploadingPicture ? 'Yükleniyor...' : 'Resim Seç'}
+                            {uploadingPicture ? t('profile.uploading') : t('profile.chooseImage')}
                           </Button>
                         </label>
                         {(profilePicturePreview || formData.profilePicture) && (
@@ -344,7 +346,7 @@ const Profile = () => {
                                     setFormData(prev => ({ ...prev, profilePicture: response.data.data.url }));
                                     setProfilePicturePreview(null);
                                     setProfilePictureFile(null);
-                                    setMessage('Profil resmi başarıyla yüklendi!');
+                                    setMessage('Profile picture uploaded!');
                                     setTimeout(() => setMessage(''), 3000);
                                     
                                     // Update user in context
@@ -352,7 +354,7 @@ const Profile = () => {
                                     localStorage.setItem('user', JSON.stringify(updatedUser));
                                     window.location.reload(); // Refresh to show new picture
                                   } catch (error) {
-                                    setMessage('Profil resmi yüklenirken hata oluştu');
+                                    setMessage('Failed to upload profile picture');
                                     setTimeout(() => setMessage(''), 3000);
                                   } finally {
                                     setUploadingPicture(false);
@@ -360,7 +362,7 @@ const Profile = () => {
                                 }}
                                 sx={{ mt: 1 }}
                               >
-                                Yükle
+                                {t('profile.upload')}
                               </Button>
                             )}
                           </Box>
@@ -379,7 +381,7 @@ const Profile = () => {
           <Card>
             <CardContent>
               <Typography variant="h6" sx={{ mb: 3, fontWeight: 600 }}>
-                Profile Preview
+                {t('profile.profilePreview')}
               </Typography>
               
               <Box display="flex" flexDirection="column" alignItems="center" sx={{ mb: 3 }}>
@@ -422,16 +424,16 @@ const Profile = () => {
           <Card sx={{ mt: 3 }}>
             <CardContent>
               <Typography variant="h6" sx={{ mb: 3, fontWeight: 600 }}>
-                Account Information
+                {t('profile.accountInformation')}
               </Typography>
               
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <Box>
                   <Typography variant="body2" color="textSecondary">
-                    Account Type
+                    {t('profile.accountType')}
                   </Typography>
                   <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                    {user?.role === 'teacher' ? 'Instructor' : 'Student'}
+                    {user?.role === 'teacher' ? t('profile.instructor') : t('profile.student')}
                   </Typography>
                 </Box>
                 
@@ -439,7 +441,7 @@ const Profile = () => {
                 
                 <Box>
                   <Typography variant="body2" color="textSecondary">
-                    Member Since
+                    {t('profile.memberSince')}
                   </Typography>
                   <Typography variant="body1" sx={{ fontWeight: 500 }}>
                     {user?.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}
@@ -450,10 +452,10 @@ const Profile = () => {
                 
                 <Box>
                   <Typography variant="body2" color="textSecondary">
-                    Email Verification
+                    {t('profile.emailVerification')}
                   </Typography>
                   <Chip 
-                    label={user?.isEmailVerified ? 'Verified' : 'Not Verified'} 
+                    label={user?.isEmailVerified ? t('profile.verified') : t('profile.notVerified')} 
                     color={user?.isEmailVerified ? 'success' : 'warning'}
                     size="small"
                   />
@@ -469,11 +471,11 @@ const Profile = () => {
         <Card>
           <CardContent>
             <Typography variant="h6" sx={{ mb: 3, fontWeight: 600 }}>
-              Şifre Değiştir
+              {t('profile.changePassword')}
             </Typography>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
               <TextField
-                label="Mevcut Şifre"
+                label={t('profile.currentPassword')}
                 type="password"
                 fullWidth
                 value={passwordData.currentPassword}
@@ -487,7 +489,7 @@ const Profile = () => {
                 helperText={passwordErrors.currentPassword}
               />
               <TextField
-                label="Yeni Şifre"
+                label={t('profile.newPassword')}
                 type="password"
                 fullWidth
                 value={passwordData.newPassword}
@@ -498,10 +500,10 @@ const Profile = () => {
                   }
                 }}
                 error={!!passwordErrors.newPassword}
-                helperText={passwordErrors.newPassword || 'En az 6 karakter olmalıdır'}
+                helperText={passwordErrors.newPassword || ''}
               />
               <TextField
-                label="Yeni Şifre (Tekrar)"
+                label={t('profile.confirmPassword')}
                 type="password"
                 fullWidth
                 value={passwordData.confirmPassword}
@@ -520,7 +522,7 @@ const Profile = () => {
                 disabled={passwordLoading}
                 sx={{ alignSelf: 'flex-start' }}
               >
-                {passwordLoading ? 'Değiştiriliyor...' : 'Şifreyi Değiştir'}
+                {passwordLoading ? t('profile.changing') : t('profile.change')}
               </Button>
             </Box>
           </CardContent>

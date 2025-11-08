@@ -292,6 +292,115 @@ const deleteCourseAdmin = async (req, res) => {
   }
 };
 
+// Update course flags (admin only) - adminDisabled / isPublished
+const updateCourseAdmin = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { adminDisabled, isPublished } = req.body;
+    const course = await Course.findByPk(id);
+    if (!course) {
+      return res.status(404).json({ success: false, message: 'Course not found' });
+    }
+    const updates = {};
+    if (typeof adminDisabled === 'boolean') {
+      updates.adminDisabled = adminDisabled;
+      if (adminDisabled) {
+        updates.isPublished = false;
+        updates.adminPublishLocked = true;
+      }
+    }
+    if (typeof isPublished === 'boolean') {
+      // Only allow publish if not adminDisabled
+      if (course.adminDisabled || updates.adminDisabled === true) {
+        updates.isPublished = false;
+        updates.adminPublishLocked = true;
+      } else {
+        updates.isPublished = isPublished;
+        updates.adminPublishLocked = true;
+      }
+    }
+    await course.update(updates);
+    // propagate publish status to videos
+    if (updates.isPublished !== undefined) {
+      await Video.update({ isPublished: updates.isPublished }, { where: { courseId: id } });
+    }
+    res.json({ success: true, data: course, message: 'Course updated' });
+  } catch (error) {
+    console.error('Error updating course (admin):', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
+// Category/Department simple CRUD using dedicated models if available, otherwise fallback to distinct values
+const { Category, Department } = require('../models');
+
+const listCategories = async (req, res) => {
+  try {
+    const items = await Category.findAll({ order: [['name', 'ASC']] });
+    res.json({ success: true, data: items });
+  } catch (e) {
+    res.status(500).json({ success: false, message: 'Failed to list categories' });
+  }
+};
+
+const createCategoryAdmin = async (req, res) => {
+  try {
+    const name = String(req.body.name || '').trim();
+    if (!name) return res.status(400).json({ success: false, message: 'Name is required' });
+    const existing = await Category.findOne({ where: { name } });
+    if (existing) return res.status(409).json({ success: false, message: 'Category already exists' });
+    const cat = await Category.create({ name });
+    res.json({ success: true, data: cat });
+  } catch (e) {
+    res.status(500).json({ success: false, message: 'Failed to create category' });
+  }
+};
+
+const deleteCategoryAdmin = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const cat = await Category.findByPk(id);
+    if (!cat) return res.status(404).json({ success: false, message: 'Category not found' });
+    await cat.destroy();
+    res.json({ success: true, message: 'Category deleted' });
+  } catch (e) {
+    res.status(500).json({ success: false, message: 'Failed to delete category' });
+  }
+};
+
+const listDepartments = async (req, res) => {
+  try {
+    const items = await Department.findAll({ order: [['name', 'ASC']] });
+    res.json({ success: true, data: items });
+  } catch (e) {
+    res.status(500).json({ success: false, message: 'Failed to list departments' });
+  }
+};
+
+const createDepartmentAdmin = async (req, res) => {
+  try {
+    const name = String(req.body.name || '').trim();
+    if (!name) return res.status(400).json({ success: false, message: 'Name is required' });
+    const existing = await Department.findOne({ where: { name } });
+    if (existing) return res.status(409).json({ success: false, message: 'Department already exists' });
+    const dep = await Department.create({ name });
+    res.json({ success: true, data: dep });
+  } catch (e) {
+    res.status(500).json({ success: false, message: 'Failed to create department' });
+  }
+};
+
+const deleteDepartmentAdmin = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const dep = await Department.findByPk(id);
+    if (!dep) return res.status(404).json({ success: false, message: 'Department not found' });
+    await dep.destroy();
+    res.json({ success: true, message: 'Department deleted' });
+  } catch (e) {
+    res.status(500).json({ success: false, message: 'Failed to delete department' });
+  }
+};
 // Create user (admin only)
 const createUser = async (req, res) => {
   try {
@@ -539,5 +648,12 @@ module.exports = {
   getAllCoursesAdmin,
   deleteCourseAdmin,
   createUser,
-  bulkCreateUsers
+  bulkCreateUsers,
+  updateCourseAdmin,
+  listCategories,
+  createCategoryAdmin,
+  deleteCategoryAdmin,
+  listDepartments,
+  createDepartmentAdmin,
+  deleteDepartmentAdmin
 };

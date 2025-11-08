@@ -9,10 +9,8 @@ import {
   CardContent,
   Stack,
   Chip,
-  Paper
 } from '@mui/material';
 import {
-  PlayCircle as PlayIcon,
   TrendingUp as TrendingIcon,
   Group as GroupIcon,
   Security as SecurityIcon,
@@ -22,216 +20,140 @@ import {
 } from '@mui/icons-material';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useTranslation } from 'react-i18next';
 
 const Home = () => {
   const { user } = useAuth();
+  const { t } = useTranslation();
 
   const features = [
     {
       icon: <VideoIcon sx={{ fontSize: 40, color: 'primary.main' }} />,
-      title: 'Video Takip Sistemi',
-      description: 'Gelişmiş algoritma ile video izleme ilerlemenizi otomatik olarak takip eder'
+      title: t('home.f1Title'),
+      description: t('home.f1Desc')
     },
     {
       icon: <TrendingIcon sx={{ fontSize: 40, color: 'primary.main' }} />,
-      title: 'Gerçek Zamanlı İlerleme',
-      description: 'Video izleme sürenizi ve tamamlanma yüzdenizi anlık olarak görün'
+      title: t('home.f2Title'),
+      description: t('home.f2Desc')
     },
     {
       icon: <GroupIcon sx={{ fontSize: 40, color: 'primary.main' }} />,
-      title: 'Öğretmen Paneli',
-      description: 'Öğretmenler kurs oluşturabilir, video yükleyebilir ve öğrenci ilerlemesini takip edebilir'
+      title: t('home.f3Title'),
+      description: t('home.f3Desc')
     },
     {
       icon: <SecurityIcon sx={{ fontSize: 40, color: 'primary.main' }} />,
-      title: 'Güvenli Platform',
-      description: 'JWT tabanlı kimlik doğrulama ile güvenli erişim ve veri koruması'
+      title: t('home.f4Title'),
+      description: t('home.f4Desc')
     }
   ];
 
   const howItWorks = [
     {
       step: '1',
-      title: 'Kayıt Olun',
-      description: 'Öğrenci veya öğretmen olarak hesap oluşturun'
+      title: t('home.step1Title'),
+      description: t('home.step1Desc')
     },
     {
       step: '2',
-      title: 'Kurslara Erişin',
-      description: 'Mevcut kursları görüntüleyin ve video içeriklerine erişin'
+      title: t('home.step2Title'),
+      description: t('home.step2Desc')
     },
     {
       step: '3',
-      title: 'Video İzleyin',
-      description: 'Videoları izleyin, sistem otomatik olarak ilerlemenizi kaydeder'
-    },
-    {
-      step: '4',
-      title: 'İlerlemenizi Takip Edin',
-      description: 'Dashboard\'da tamamladığınız videoları ve genel ilerlemenizi görün'
+      title: t('home.step3Title'),
+      description: t('home.step3Desc')
     }
   ];
 
   return (
     <Box>
-      {/* Hero Section */}
       <Box
         sx={{
           background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
           color: 'white',
-          py: 8,
+          py: 10,
           position: 'relative',
           overflow: 'hidden'
         }}
       >
         <Container maxWidth="lg">
-          <Grid container spacing={4} alignItems="center">
-            <Grid item xs={12} md={6}>
-              <Typography
-                variant="h2"
-                component="h1"
-                sx={{
-                  fontWeight: 700,
-                  mb: 2,
-                  fontSize: { xs: '2.5rem', md: '3.5rem' }
-                }}
-              >
-                Viducate
-              </Typography>
-              <Typography
-                variant="h5"
-                sx={{
-                  mb: 4,
-                  opacity: 0.9,
-                  fontWeight: 300
-                }}
-              >
-                Akıllı video takip sistemi ile eğitim platformu. 
-                Öğrencilerin video izleme ilerlemesini otomatik olarak takip eder.
-              </Typography>
-              
-              {user ? (
-                <Stack direction="row" spacing={2} flexWrap="wrap">
-                  <Button
-                    component={Link}
-                    to="/dashboard"
-                    variant="contained"
-                    size="large"
-                    sx={{
-                      bgcolor: 'white',
-                      color: 'primary.main',
-                      '&:hover': {
-                        bgcolor: 'grey.100'
-                      }
-                    }}
-                  >
-                    Dashboard'a Git
-                  </Button>
-                  <Button
-                    component={Link}
-                    to="/courses"
-                    variant="outlined"
-                    size="large"
-                    sx={{
-                      borderColor: 'white',
-                      color: 'white',
-                      '&:hover': {
-                        borderColor: 'white',
-                        bgcolor: 'rgba(255,255,255,0.1)'
-                      }
-                    }}
-                  >
-                    Kursları Görüntüle
-                  </Button>
-                </Stack>
-              ) : (
-                <Stack direction="row" spacing={2} flexWrap="wrap">
-                  <Button
-                    component={Link}
-                    to="/register"
-                    variant="contained"
-                    size="large"
-                    sx={{
-                      bgcolor: 'white',
-                      color: 'primary.main',
-                      '&:hover': {
-                        bgcolor: 'grey.100'
-                      }
-                    }}
-                  >
-                    Üye Ol
-                  </Button>
-                  <Button
-                    component={Link}
-                    to="/login"
-                    variant="outlined"
-                    size="large"
-                    sx={{
-                      borderColor: 'white',
-                      color: 'white',
-                      '&:hover': {
-                        borderColor: 'white',
-                        bgcolor: 'rgba(255,255,255,0.1)'
-                      }
-                    }}
-                  >
-                    Giriş Yap
-                  </Button>
-                </Stack>
-              )}
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <Box
-                sx={{
-                  display: 'flex',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  height: 400
-                }}
-              >
-                <VideoIcon sx={{ fontSize: 200, opacity: 0.3 }} />
-              </Box>
-            </Grid>
-          </Grid>
+          <Box sx={{ textAlign: 'center' }}>
+            <Typography
+              variant="h2"
+              component="h1"
+              sx={{
+                fontWeight: 700,
+                mb: 2,
+                fontSize: { xs: '2.5rem', md: '3.2rem' }
+              }}
+            >
+              {t('home.title')}
+            </Typography>
+            <Typography
+              variant="h5"
+              sx={{
+                mb: 4,
+                opacity: 0.95,
+                fontWeight: 300,
+                maxWidth: 800,
+                mx: 'auto'
+              }}
+            >
+              {t('home.subtitle')}
+            </Typography>
+
+            {user ? (
+              <Stack direction="row" spacing={2} justifyContent="center" flexWrap="wrap">
+                <Button
+                  component={Link}
+                  to="/dashboard"
+                  variant="contained"
+                  size="large"
+                  sx={{
+                    bgcolor: 'white',
+                    color: 'primary.main',
+                    '&:hover': { bgcolor: 'grey.100' }
+                  }}
+                >
+                  {t('home.goToDashboard')}
+                </Button>
+                <Button
+                  component={Link}
+                  to="/courses"
+                  variant="outlined"
+                  size="large"
+                  sx={{
+                    borderColor: 'white',
+                    color: 'white',
+                    '&:hover': { borderColor: 'white', bgcolor: 'rgba(255,255,255,0.1)' }
+                  }}
+                >
+                  {t('home.viewCourses')}
+                </Button>
+              </Stack>
+            ) : (
+              <Stack direction="row" spacing={2} justifyContent="center" flexWrap="wrap">
+                <Button
+                  component={Link}
+                  to="/login"
+                  variant="contained"
+                  size="large"
+                  sx={{
+                    bgcolor: 'white',
+                    color: 'primary.main',
+                    '&:hover': { bgcolor: 'grey.100' }
+                  }}
+                >
+                  {t('home.signIn')}
+                </Button>
+              </Stack>
+            )}
+          </Box>
         </Container>
       </Box>
 
-      {/* Demo Video Section */}
-      <Container maxWidth="lg" sx={{ py: 6 }}>
-        <Typography
-          variant="h3"
-          component="h2"
-          textAlign="center"
-          sx={{ mb: 4, fontWeight: 600 }}
-        >
-          Sistem Nasıl Çalışır?
-        </Typography>
-        <Paper
-          sx={{
-            p: 3,
-            textAlign: 'center',
-            bgcolor: 'grey.50',
-            border: '2px dashed',
-            borderColor: 'primary.main'
-          }}
-        >
-          <Typography variant="h6" sx={{ mb: 2 }}>
-            Demo Video
-          </Typography>
-          <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-            Sistem tanıtım videosu buraya eklenecek
-          </Typography>
-          <Button
-            variant="contained"
-            startIcon={<PlayIcon />}
-            size="large"
-          >
-            Demo Video İzle
-          </Button>
-        </Paper>
-      </Container>
-
-      {/* How It Works Section */}
       <Box sx={{ bgcolor: 'grey.50', py: 8 }}>
         <Container maxWidth="lg">
           <Typography
@@ -240,11 +162,11 @@ const Home = () => {
             textAlign="center"
             sx={{ mb: 6, fontWeight: 600 }}
           >
-            Nasıl Çalışır?
+            {t('home.howItWorks')}
           </Typography>
           <Grid container spacing={4}>
             {howItWorks.map((step, index) => (
-              <Grid item xs={12} sm={6} md={3} key={index}>
+              <Grid item xs={12} sm={6} md={4} key={index}>
                 <Card
                   sx={{
                     height: '100%',
@@ -287,7 +209,6 @@ const Home = () => {
         </Container>
       </Box>
 
-      {/* Features Section */}
       <Container maxWidth="lg" sx={{ py: 8 }}>
         <Typography
           variant="h3"
@@ -295,7 +216,7 @@ const Home = () => {
           textAlign="center"
           sx={{ mb: 6, fontWeight: 600 }}
         >
-          Özellikler
+          {t('home.featuresTitle')}
         </Typography>
         <Grid container spacing={4}>
           {features.map((feature, index) => (
@@ -333,67 +254,20 @@ const Home = () => {
         </Grid>
       </Container>
 
-      {/* Video Tracking Algorithm Section */}
-      <Box sx={{ bgcolor: 'primary.main', color: 'white', py: 8 }}>
-        <Container maxWidth="lg">
-          <Grid container spacing={4} alignItems="center">
-            <Grid item xs={12} md={6}>
-              <Typography
-                variant="h3"
-                component="h2"
-                sx={{ mb: 3, fontWeight: 600 }}
-              >
-                Akıllı Video Takip Algoritması
-              </Typography>
-              <Typography variant="h6" sx={{ mb: 3, opacity: 0.9 }}>
-                Sistem, video izleme davranışlarınızı analiz ederek:
-              </Typography>
-              <Box component="ul" sx={{ pl: 2 }}>
-                <Typography component="li" variant="body1" sx={{ mb: 1 }}>
-                  İzleme süresini ve yüzdesini takip eder
-                </Typography>
-                <Typography component="li" variant="body1" sx={{ mb: 1 }}>
-                  %80 izlendiğinde videoyu tamamlandı sayar
-                </Typography>
-                <Typography component="li" variant="body1" sx={{ mb: 1 }}>
-                  Duraklama, geri sarma gibi etkileşimleri kaydeder
-                </Typography>
-                <Typography component="li" variant="body1" sx={{ mb: 1 }}>
-                  Oturum sürekliliğini kontrol eder
-                </Typography>
-              </Box>
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <Box
-                sx={{
-                  display: 'flex',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  height: 300
-                }}
-              >
-                <TrendingIcon sx={{ fontSize: 150, opacity: 0.3 }} />
-              </Box>
-            </Grid>
-          </Grid>
-        </Container>
-      </Box>
-
-      {/* CTA Section */}
       <Container maxWidth="md" sx={{ py: 8, textAlign: 'center' }}>
         <Typography
           variant="h3"
           component="h2"
           sx={{ mb: 3, fontWeight: 600 }}
         >
-          Hemen Başlayın
+          {t('home.ctaTitle')}
         </Typography>
         <Typography
           variant="h6"
           color="text.secondary"
           sx={{ mb: 4 }}
         >
-          Video takip sistemimizi deneyin ve eğitim sürecinizi optimize edin
+          {t('home.ctaSubtitle')}
         </Typography>
         {user ? (
           <Button
@@ -404,20 +278,9 @@ const Home = () => {
             startIcon={<CheckIcon />}
             sx={{ px: 4, py: 1.5 }}
           >
-            Dashboard'a Git
+            {t('home.ctaDashboard')}
           </Button>
-        ) : (
-          <Button
-            component={Link}
-            to="/register"
-            variant="contained"
-            size="large"
-            startIcon={<TimeIcon />}
-            sx={{ px: 4, py: 1.5 }}
-          >
-            Ücretsiz Üye Ol
-          </Button>
-        )}
+        ) : null}
       </Container>
     </Box>
   );

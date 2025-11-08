@@ -7,8 +7,8 @@ const authController = require('../controllers/authController');
 const { auth } = require('../middleware/auth');
 const { validateRegistration, validateLogin } = require('../middleware/validation');
 
-// Public routes
-router.post('/register', validateRegistration, authController.register);
+// Public routes (Registration disabled - only admins can create users via admin endpoints)
+// router.post('/register', validateRegistration, authController.register);
 router.post('/login', validateLogin, authController.login);
 router.get('/verify-email/:token', authController.verifyEmail);
 router.post('/forgot-password', authController.forgotPassword);

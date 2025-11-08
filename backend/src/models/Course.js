@@ -24,10 +24,11 @@ const Course = sequelize.define('Course', {
   },
   category: {
     type: DataTypes.STRING,
-    allowNull: false,
-    validate: {
-      len: [2, 50]
-    }
+    allowNull: true
+  },
+  department: {
+    type: DataTypes.STRING,
+    allowNull: true
   },
   level: {
     type: DataTypes.STRING,
@@ -35,6 +36,14 @@ const Course = sequelize.define('Course', {
     validate: {
       isIn: [['beginner', 'intermediate', 'advanced']]
     }
+  },
+  adminDisabled: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
+  },
+  adminPublishLocked: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
   },
   isPublished: {
     type: DataTypes.BOOLEAN,

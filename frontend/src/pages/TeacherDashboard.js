@@ -50,8 +50,10 @@ import {
 } from '@mui/icons-material';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { useTranslation } from 'react-i18next';
 
 const TeacherDashboard = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState(0);
   const [courses, setCourses] = useState([]);
@@ -75,6 +77,29 @@ const TeacherDashboard = () => {
     ], imageUrl: '' }
   ]);
   const [creatingQuiz, setCreatingQuiz] = useState(false);
+  // Quiz management state
+  const [myQuizzes, setMyQuizzes] = useState([]);
+  const [loadingQuizzes, setLoadingQuizzes] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [quizToEdit, setQuizToEdit] = useState(null);
+  const [editQuestions, setEditQuestions] = useState([]);
+  const [savingQuizEdits, setSavingQuizEdits] = useState(false);
+  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [quizToAssign, setQuizToAssign] = useState(null);
+  const [selectedCourseIds, setSelectedCourseIds] = useState([]);
+  const [assignmentRows, setAssignmentRows] = useState([{ id: 1, courseId: '', videoId: '' }]);
+
+  const resolveImageUrl = (url) => {
+    if (!url) return url;
+    if (/^https?:/i.test(url) || url.startsWith('data:')) return url;
+    const base = process.env.REACT_APP_API_BASE_URL ||
+      (process.env.NODE_ENV === 'development' ? 'http://127.0.0.1:5001' : `${window.location.origin}`);
+    try {
+      return new URL(url, base).toString();
+    } catch {
+      return `${base.replace(/\/$/, '')}/${String(url).replace(/^\//, '')}`;
+    }
+  };
 
   // Fetch teacher's courses
   const fetchCourses = async () => {
@@ -118,10 +143,27 @@ const TeacherDashboard = () => {
     }
   };
 
+  const fetchMyQuizzes = async () => {
+    try {
+      setLoadingQuizzes(true);
+      const token = localStorage.getItem('token');
+      if (token) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      }
+      const response = await axios.get('/api/quizzes/my');
+      setMyQuizzes(response?.data?.data || []);
+    } catch (error) {
+      console.error('Error fetching quizzes:', error);
+      setSnackbar({ open: true, message: 'Failed to fetch quizzes', severity: 'error' });
+    } finally {
+      setLoadingQuizzes(false);
+    }
+  };
+
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
-      await Promise.all([fetchCourses(), fetchStudents()]);
+      await Promise.all([fetchCourses(), fetchStudents(), fetchMyQuizzes()]);
       setLoading(false);
     };
     loadData();
@@ -184,10 +226,10 @@ const TeacherDashboard = () => {
       <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 4 }}>
         <Box>
           <Typography variant="h4" component="h1" sx={{ fontWeight: 600, mb: 1 }}>
-            Welcome back, Teacher!
+            {t('teacher.welcome')}
           </Typography>
           <Typography variant="body1" color="textSecondary">
-            Manage your courses and track student progress
+            {t('teacher.subtitle')}
           </Typography>
         </Box>
         <Button
@@ -197,7 +239,7 @@ const TeacherDashboard = () => {
           startIcon={<AddIcon />}
           size="large"
         >
-          Create New Course
+          {t('teacher.createNewCourse')}
         </Button>
       </Box>
 
@@ -291,10 +333,10 @@ const TeacherDashboard = () => {
       {/* Tabs */}
       <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
         <Tabs value={activeTab} onChange={(e, newValue) => setActiveTab(newValue)}>
-          <Tab label="My Courses" />
-          <Tab label="Students" />
-          <Tab label="Analytics" />
-          <Tab label="Quizzes" />
+          <Tab label={t('teacher.tabs.myCourses')} />
+          <Tab label={t('teacher.tabs.students')} />
+          <Tab label={t('teacher.tabs.analytics')} />
+          <Tab label={t('teacher.tabs.quizzes')} />
         </Tabs>
       </Box>
 
@@ -304,7 +346,7 @@ const TeacherDashboard = () => {
           <CardContent>
             <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 3 }}>
               <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
-                My Courses
+                {t('teacher.tabs.myCourses')}
               </Typography>
               <Button
                 component={Link}
@@ -313,7 +355,7 @@ const TeacherDashboard = () => {
                 startIcon={<AddIcon />}
                 size="medium"
               >
-                Add Course
+                {t('teacher.createNewCourse')}
               </Button>
             </Box>
             
@@ -321,10 +363,10 @@ const TeacherDashboard = () => {
               <Box textAlign="center" py={6}>
                 <SchoolIcon sx={{ fontSize: 80, color: 'text.secondary', mb: 3 }} />
                 <Typography variant="h5" color="textSecondary" gutterBottom>
-                  No courses yet
+                  {t('teacher.emptyCoursesTitle')}
                 </Typography>
                 <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
-                  Create your first course to start teaching and sharing knowledge
+                  {t('teacher.emptyCoursesSubtitle')}
                 </Typography>
                 <Button
                   component={Link}
@@ -333,7 +375,7 @@ const TeacherDashboard = () => {
                   startIcon={<AddIcon />}
                   size="large"
                 >
-                  Create Your First Course
+                  {t('teacher.createFirstCourse')}
                 </Button>
               </Box>
             ) : (
@@ -341,12 +383,12 @@ const TeacherDashboard = () => {
                 <Table>
                   <TableHead>
                     <TableRow>
-                      <TableCell sx={{ fontWeight: 'bold' }}>Course</TableCell>
-                      <TableCell sx={{ fontWeight: 'bold' }}>Sections</TableCell>
-                      <TableCell sx={{ fontWeight: 'bold' }}>Videos</TableCell>
-                      <TableCell sx={{ fontWeight: 'bold' }}>Students</TableCell>
-                      <TableCell sx={{ fontWeight: 'bold' }}>Status</TableCell>
-                      <TableCell sx={{ fontWeight: 'bold' }}>Actions</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }}>{t('teacher.table.course')}</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }}>{t('teacher.table.sections')}</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }}>{t('teacher.table.videos')}</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }}>{t('teacher.table.students')}</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }}>{t('teacher.table.status')}</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }}>{t('teacher.table.actions')}</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -366,10 +408,10 @@ const TeacherDashboard = () => {
                             </Box>
                             <Box display="flex" gap={2}>
                               <Typography variant="caption" color="textSecondary">
-                                Created: {course.createdAt ? new Date(course.createdAt).toLocaleString() : '-'}
+                                {t('teacher.table.created')}: {course.createdAt ? new Date(course.createdAt).toLocaleString() : '-'}
                               </Typography>
                               <Typography variant="caption" color="textSecondary">
-                                Updated: {course.updatedAt ? new Date(course.updatedAt).toLocaleString() : '-'}
+                                {t('teacher.table.updated')}: {course.updatedAt ? new Date(course.updatedAt).toLocaleString() : '-'}
                               </Typography>
                             </Box>
                           </Box>
@@ -378,7 +420,7 @@ const TeacherDashboard = () => {
                           <Box display="flex" alignItems="center" gap={1}>
                             <AssessmentIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
                             <Typography variant="body2">
-                              {course.sections?.length || 0} sections
+                              {course.sections?.length || 0} {t('teacher.table.sections').toLowerCase()}
                             </Typography>
                           </Box>
                         </TableCell>
@@ -386,7 +428,7 @@ const TeacherDashboard = () => {
                           <Box display="flex" alignItems="center" gap={1}>
                             <VideoIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
                             <Typography variant="body2">
-                              {course.videos?.length || 0} videos
+                              {course.videos?.length || 0} {t('teacher.table.videos').toLowerCase()}
                             </Typography>
                           </Box>
                         </TableCell>
@@ -394,7 +436,7 @@ const TeacherDashboard = () => {
                           <Box display="flex" alignItems="center" gap={1}>
                             <PersonIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
                             <Typography variant="body2">
-                              {course.studentCount || 0} students
+                              {course.studentCount || 0} {t('teacher.table.students').toLowerCase()}
                             </Typography>
                           </Box>
                         </TableCell>
@@ -407,7 +449,7 @@ const TeacherDashboard = () => {
                                 color="success"
                               />
                             }
-                            label={course.isPublished ? 'Published' : 'Draft'}
+                            label={course.isPublished ? t('teacher.table.published') : t('teacher.table.draft')}
                           />
                         </TableCell>
                         <TableCell>
@@ -415,7 +457,7 @@ const TeacherDashboard = () => {
                             <IconButton
                               size="small"
                               onClick={() => navigate(`/course/${course.id}`)}
-                              title="View Course"
+                              title={t('teacher.table.viewCourse')}
                               color="primary"
                             >
                               <VisibilityIcon />
@@ -423,7 +465,7 @@ const TeacherDashboard = () => {
                             <IconButton
                               size="small"
                               onClick={() => navigate(`/edit-course/${course.id}`)}
-                              title="Edit Course"
+                              title={t('teacher.table.editCourse')}
                               color="info"
                             >
                               <EditIcon />
@@ -431,7 +473,7 @@ const TeacherDashboard = () => {
                             <IconButton
                               size="small"
                               onClick={() => openDeleteDialog(course)}
-                              title="Delete Course"
+                              title={t('teacher.table.deleteCourse')}
                               color="error"
                             >
                               <DeleteIcon />
@@ -452,7 +494,7 @@ const TeacherDashboard = () => {
         <Card>
           <CardContent>
             <Typography variant="h5" gutterBottom sx={{ fontWeight: 'bold', mb: 3 }}>
-              Students in My Courses
+              {t('teacher.studentsTabTitle')}
             </Typography>
             
             {students.length === 0 ? (
@@ -470,12 +512,12 @@ const TeacherDashboard = () => {
                 <Table>
                   <TableHead>
                     <TableRow>
-                      <TableCell sx={{ fontWeight: 'bold' }}>Student</TableCell>
-                      <TableCell sx={{ fontWeight: 'bold' }}>Email</TableCell>
-                      <TableCell sx={{ fontWeight: 'bold' }}>Enrolled Course</TableCell>
-                      <TableCell sx={{ fontWeight: 'bold' }}>Enrolled Date</TableCell>
-                      <TableCell sx={{ fontWeight: 'bold' }}>Progress</TableCell>
-                      <TableCell sx={{ fontWeight: 'bold' }}>Actions</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }}>{t('teacher.studentsTable.student')}</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }}>{t('teacher.studentsTable.email')}</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }}>{t('teacher.studentsTable.enrolledCourse')}</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }}>{t('teacher.studentsTable.enrolledDate')}</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }}>{t('teacher.studentsTable.progress')}</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }}>{t('teacher.studentsTable.actions')}</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -593,8 +635,11 @@ const TeacherDashboard = () => {
       {activeTab === 3 && (
         <Card>
           <CardContent>
-            <Typography variant="h5" gutterBottom sx={{ fontWeight: 'bold', mb: 3 }}>
+            <Typography variant="h5" gutterBottom sx={{ fontWeight: 'bold', mb: 1 }}>
               Create and Assign Quiz
+            </Typography>
+            <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+              Build a new quiz and assign it to a specific video.
             </Typography>
             <Grid container spacing={2} sx={{ mb: 2 }}>
               <Grid item xs={12} md={4}>
@@ -688,6 +733,90 @@ const TeacherDashboard = () => {
                 {creatingQuiz ? 'Creating...' : 'Create & Assign Quiz'}
               </Button>
             </Box>
+
+            <Divider sx={{ my: 4 }} />
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+              <Typography variant="h6" sx={{ fontWeight: 'bold' }}>My Quizzes</Typography>
+              <Button variant="text" size="small" onClick={fetchMyQuizzes} disabled={loadingQuizzes}>
+                {loadingQuizzes ? 'Refreshing...' : 'Refresh'}
+              </Button>
+            </Box>
+            {myQuizzes.length === 0 ? (
+              <Box textAlign="center" py={4}>
+                <AssessmentIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+                <Typography variant="body1" color="textSecondary">
+                  No quizzes yet. Create one above.
+                </Typography>
+              </Box>
+            ) : (
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 'bold' }}>Title</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }}>Questions</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }}>Assignments</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }}>Updated</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }}>Actions</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {myQuizzes.map(q => (
+                      <TableRow key={q.id} hover>
+                        <TableCell>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>{q.title}</Typography>
+                          <Typography variant="caption" color="textSecondary">Pass ≥ {Math.round((q.passThreshold || 0.7) * 100)}%</Typography>
+                        </TableCell>
+                        <TableCell>{q.questionCount || 0}</TableCell>
+                        <TableCell>{q.assignmentCount || 0}</TableCell>
+                        <TableCell>{q.updatedAt ? new Date(q.updatedAt).toLocaleString() : '-'}</TableCell>
+                        <TableCell>
+                          <Box display="flex" gap={1}>
+                            <Button size="small" variant="outlined" onClick={() => {
+                              setQuizToAssign(q);
+                              setSelectedCourseIds([]);
+                              setAssignmentRows([{ id: Date.now(), courseId: '', videoId: '' }]);
+                              setAssignDialogOpen(true);
+                            }}>
+                              Assign to Courses
+                            </Button>
+                            <IconButton size="small" color="info" title="Edit" onClick={async () => {
+                              try {
+                                const token = localStorage.getItem('token');
+                                if (token) axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+                                const resp = await axios.get(`/api/quizzes/${q.id}`);
+                                const data = resp?.data?.data;
+                                setQuizToEdit({ id: q.id, title: q.title, passPct: Math.round((q.passThreshold || 0.7) * 100) });
+                                setEditQuestions(data?.questions || []);
+                                setEditDialogOpen(true);
+                              } catch (err) {
+                                setSnackbar({ open: true, message: 'Failed to load quiz for edit', severity: 'error' });
+                              }
+                            }}>
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                            <IconButton size="small" color="error" title="Delete" onClick={async () => {
+                              if (!window.confirm(`"${q.title}" isimli quiz silinecek. Emin misiniz?`)) return;
+                              try {
+                                const token = localStorage.getItem('token');
+                                if (token) axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+                                await axios.delete(`/api/quizzes/${q.id}`);
+                                setSnackbar({ open: true, message: 'Quiz deleted', severity: 'success' });
+                                fetchMyQuizzes();
+                              } catch (err) {
+                                setSnackbar({ open: true, message: 'Failed to delete quiz', severity: 'error' });
+                              }
+                            }}>
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Box>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
           </CardContent>
         </Card>
       )}
@@ -705,6 +834,188 @@ const TeacherDashboard = () => {
           <Button onClick={handleDeleteCourse} color="error" variant="contained">
             Delete Course
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit Quiz Dialog */}
+      <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)}>
+        <DialogTitle>Quiz Düzenle</DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 360 }}>
+            <TextField
+              label="Title"
+              value={quizToEdit?.title || ''}
+              onChange={(e) => setQuizToEdit(prev => ({ ...prev, title: e.target.value }))}
+              fullWidth
+            />
+            <TextField
+              type="number"
+              label="Pass Threshold (%)"
+              value={quizToEdit?.passPct || 70}
+              onChange={(e) => {
+                const v = Math.max(1, Math.min(100, Number(e.target.value) || 70));
+                setQuizToEdit(prev => ({ ...prev, passPct: v }));
+              }}
+              fullWidth
+            />
+            <Divider sx={{ my: 1 }} />
+            <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>Questions</Typography>
+            {editQuestions.map((q, idx) => (
+              <Paper key={q.id} sx={{ p: 2, mb: 2 }}>
+                <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>Soru {idx + 1}</Typography>
+                <TextField
+                  fullWidth
+                  label="Question Text"
+                  value={q.text}
+                  onChange={(e) => setEditQuestions(prev => prev.map(x => x.id === q.id ? { ...x, text: e.target.value } : x))}
+                  sx={{ mb: 1 }}
+                />
+                {q.imageUrl && (
+                  <Box sx={{ mb: 1, display: 'flex', justifyContent: 'center' }}>
+                    <img src={resolveImageUrl(q.imageUrl)} alt={`Q${idx+1}`} style={{ maxWidth: '100%', maxHeight: 200, objectFit: 'contain', borderRadius: 6, border: '1px solid #eee' }} />
+                  </Box>
+                )}
+                <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                  <Button variant="outlined" component="label" size="small">
+                    {q.imageUrl ? 'Change Image' : 'Upload Image'}
+                    <input type="file" hidden accept="image/*" onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      try {
+                        const fd = new FormData();
+                        fd.append('image', file);
+                        const token = localStorage.getItem('token');
+                        if (token) axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+                        const resp = await axios.post('/api/quizzes/upload-image', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+                        const url = resp?.data?.data?.url;
+                        if (url) setEditQuestions(prev => prev.map(x => x.id === q.id ? { ...x, imageUrl: url } : x));
+                      } catch (err) {
+                        setSnackbar({ open: true, message: 'Image upload failed', severity: 'error' });
+                      }
+                    }} />
+                  </Button>
+                  {q.imageUrl && (
+                    <Button size="small" onClick={() => setEditQuestions(prev => prev.map(x => x.id === q.id ? { ...x, imageUrl: '' } : x))}>
+                      Remove Image
+                    </Button>
+                  )}
+                </Box>
+                <RadioGroup
+                  value={(q.options.find(o => o.isCorrect)?.id) || ''}
+                  onChange={(e) => setEditQuestions(prev => prev.map(x => x.id === q.id ? { ...x, options: x.options.map(o => ({ ...o, isCorrect: String(o.id) === e.target.value })) } : x))}
+                >
+                  {q.options.map((opt, oidx) => (
+                    <MuiFormControlLabel
+                      key={opt.id}
+                      value={String(opt.id)}
+                      control={<Radio />}
+                      label={
+                        <TextField
+                          fullWidth
+                          placeholder={`Option ${oidx + 1}`}
+                          value={opt.text}
+                          onChange={(e) => setEditQuestions(prev => prev.map(x => x.id === q.id ? { ...x, options: x.options.map(o => o.id === opt.id ? { ...o, text: e.target.value } : o) } : x))}
+                        />
+                      }
+                    />
+                  ))}
+                </RadioGroup>
+              </Paper>
+            ))}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditDialogOpen(false)}>Cancel</Button>
+          <Button variant="contained" disabled={savingQuizEdits} onClick={async () => {
+            if (!quizToEdit) return;
+            try {
+              setSavingQuizEdits(true);
+              const token = localStorage.getItem('token');
+              if (token) axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+              // Update quiz meta
+              await axios.put(`/api/quizzes/${quizToEdit.id}`, { title: quizToEdit.title, passThreshold: (Number(quizToEdit.passPct) || 70) / 100 });
+              // Update each question
+              for (const q of editQuestions) {
+                const payload = { text: q.text, imageUrl: q.imageUrl || null, options: q.options.map(o => ({ id: o.id, text: o.text, isCorrect: !!o.isCorrect })) };
+                // eslint-disable-next-line no-await-in-loop
+                await axios.put(`/api/quizzes/${quizToEdit.id}/questions/${q.id}`, payload);
+              }
+              setSnackbar({ open: true, message: 'Quiz updated', severity: 'success' });
+              setEditDialogOpen(false);
+              fetchMyQuizzes();
+            } catch (err) {
+              setSnackbar({ open: true, message: 'Failed to update quiz', severity: 'error' });
+            } finally {
+              setSavingQuizEdits(false);
+            }
+          }}>{savingQuizEdits ? 'Saving...' : 'Save'}</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Assign to Courses Dialog */}
+      <Dialog open={assignDialogOpen} onClose={() => setAssignDialogOpen(false)}>
+        <DialogTitle>Assign "{quizToAssign?.title}" to Courses & Chapters</DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 1, minWidth: 420, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {assignmentRows.map((row, idx) => (
+              <Box key={row.id} sx={{ display: 'flex', gap: 1 }}>
+                <Select
+                  fullWidth
+                  displayEmpty
+                  value={row.courseId}
+                  onChange={(e) => setAssignmentRows(prev => prev.map(r => r.id === row.id ? { ...r, courseId: e.target.value, videoId: '' } : r))}
+                >
+                  <MenuItem value="" disabled>Select Course</MenuItem>
+                  {courses.map(c => (
+                    <MenuItem key={c.id} value={c.id}>{c.title}</MenuItem>
+                  ))}
+                </Select>
+                <Select
+                  fullWidth
+                  displayEmpty
+                  value={row.videoId}
+                  onChange={(e) => setAssignmentRows(prev => prev.map(r => r.id === row.id ? { ...r, videoId: e.target.value } : r))}
+                  disabled={!row.courseId}
+                >
+                  <MenuItem value="" disabled>Select Chapter (Video)</MenuItem>
+                  {courses.find(c => c.id === row.courseId)?.videos?.sort((a, b) => (a.order || 0) - (b.order || 0)).map(v => (
+                    <MenuItem key={v.id} value={v.id}>{v.title}</MenuItem>
+                  ))}
+                </Select>
+                <Button onClick={() => setAssignmentRows(prev => prev.filter(r => r.id !== row.id))} disabled={assignmentRows.length <= 1}>Remove</Button>
+              </Box>
+            ))}
+            <Button onClick={() => setAssignmentRows(prev => [...prev, { id: Date.now(), courseId: '', videoId: '' }])}>
+              Add another assignment
+            </Button>
+            <Typography variant="caption" color="textSecondary">
+              Select a course and its chapter for each assignment. You can add multiple rows.
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAssignDialogOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={async () => {
+            if (!quizToAssign) {
+              setSnackbar({ open: true, message: 'No quiz selected', severity: 'warning' });
+              return;
+            }
+            try {
+              const token = localStorage.getItem('token');
+              if (token) axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+              const videoIds = assignmentRows.map(r => r.videoId).filter(Boolean);
+              if (videoIds.length === 0) {
+                setSnackbar({ open: true, message: 'Select at least one course & chapter', severity: 'warning' });
+                return;
+              }
+              await axios.post(`/api/quizzes/${quizToAssign.id}/assign-to-videos`, { videoIds, isRequired: true, unlockNextOnPass: true });
+              setSnackbar({ open: true, message: 'Quiz assigned', severity: 'success' });
+              setAssignDialogOpen(false);
+              fetchMyQuizzes();
+            } catch (err) {
+              setSnackbar({ open: true, message: 'Failed to assign quiz', severity: 'error' });
+            }
+          }}>Assign</Button>
         </DialogActions>
       </Dialog>
 
