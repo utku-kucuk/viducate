@@ -439,24 +439,32 @@ const CourseDetail = () => {
                                         </ListItem>
                                         
                                         {quizInfo.hasQuiz && (
-                                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', ml: 5, my: 1 }}>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                              {quizInfo.passed ? <CheckIcon color="success" /> : <PlayIcon color="disabled" />}
-                                              <Typography variant="body2">Quiz: {quizInfo.quizTitle || 'Chapter Quiz'}</Typography>
-                                              {quizInfo.isRequired && <Chip label="Required" size="small" />}
-                                              {quizInfo.passed && <Chip label="Completed" size="small" color="success" />}
-                                            </Box>
-                                            <Button
-                                              component={Link}
-                                              to={resolvedVideoId ? `/video/${resolvedVideoId}?startQuiz=1` : '#'}
-                                              variant="outlined"
-                                              size="small"
-                                              startIcon={<PlayIcon />}
-                                              disabled={!resolvedVideoId || (!isTeacher && (!isEnrolled || !isVideoUnlocked(resolvedVideoId))) || !(progress?.isCompleted)}
-                                            >
-                                              {quizInfo.passed ? 'Review' : 'Start Quiz'}
-                                            </Button>
-                                          </Box>
+                                          <List sx={{ p: 0 }}>
+                                            <ListItem sx={{ px: 0 }}>
+                                              <ListItemIcon>
+                                                {quizInfo.passed ? <CheckIcon color="success" /> : <PlayIcon color={progress?.isCompleted ? 'primary' : 'disabled'} />}
+                                              </ListItemIcon>
+                                              <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                <Box display="flex" alignItems="center" gap={1} sx={{ mb: 0.5 }}>
+                                                  <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                                                    Quiz: {quizInfo.quizTitle || 'Chapter quiz'}
+                                                  </Typography>
+                                                  {quizInfo.isRequired && <Chip label="Required" size="small" />}
+                                                  {quizInfo.passed && <Chip label="Passed" size="small" color="success" />}
+                                                </Box>
+                                              </Box>
+                                              <Button
+                                                component={Link}
+                                                to={resolvedVideoId && quizInfo?.quizId ? `/quiz/${quizInfo.quizId}?videoId=${resolvedVideoId}` : '#'}
+                                                variant="outlined"
+                                                size="small"
+                                                startIcon={<PlayIcon />}
+                                                disabled={!resolvedVideoId || !quizInfo?.quizId || (!isTeacher && (!isEnrolled || !isVideoUnlocked(resolvedVideoId))) || !(progress?.isCompleted)}
+                                              >
+                                                {quizInfo.passed ? 'Review quiz' : 'Start quiz'}
+                                              </Button>
+                                            </ListItem>
+                                          </List>
                                         )}
 
                                         {videoIndex < section.videos.length - 1 && <Divider />}

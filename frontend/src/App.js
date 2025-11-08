@@ -19,6 +19,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import Profile from './pages/Profile';
 import CreateCourse from './pages/CreateCourse';
 import Notes from './pages/Notes';
+import QuizPlayer from './pages/QuizPlayer';
 
 function App() {
   return (
@@ -81,6 +82,11 @@ function App() {
             <Route path="/video/:videoId" element={
               <PrivateRoute allowedRoles={['student', 'teacher', 'admin']}>
                 <VideoPlayer />
+              </PrivateRoute>
+            } />
+            <Route path="/quiz/:quizId" element={
+              <PrivateRoute allowedRoles={['student', 'teacher', 'admin']}>
+                <QuizPlayer />
               </PrivateRoute>
             } />
             

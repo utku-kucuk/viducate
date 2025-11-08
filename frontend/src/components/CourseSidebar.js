@@ -439,25 +439,25 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }
                             </ListItem>
 
                             {quizInfo.hasQuiz && (
-                              <ListItem disablePadding sx={{ pl: 6 }}>
+                              <ListItem disablePadding>
                                 {(() => {
-                                  const canStartQuiz = !isVideoLocked(video) && getVideoStatus(video) === 'completed';
+                                  const canStartQuiz = isTeacher || (!isVideoLocked(video) && getVideoStatus(video) === 'completed');
                                   return (
-                                <ListItemButton onClick={() => navigate(`/video/${resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id}?startQuiz=1`)} disabled={!canStartQuiz}>
+                                <ListItemButton onClick={() => navigate(`/quiz/${quizInfo.quizId}?videoId=${resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id}`)} disabled={!canStartQuiz}>
                                   <ListItemIcon sx={{ minWidth: 32 }}>
                                     {quizInfo.passed ? <CheckBoxIcon color="success" /> : <CheckBoxOutlineBlankIcon color={canStartQuiz ? 'action' : 'disabled'} />}
                                   </ListItemIcon>
                                   <ListItemText
                                     primary={
                                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <Typography variant="body2">Quiz: {quizInfo.quizTitle || 'Chapter Quiz'}</Typography>
+                                        <Typography variant="body2">Quiz: {quizInfo.quizTitle || 'Chapter quiz'}</Typography>
                                         {quizInfo.isRequired && <Chip label="Required" size="small" />}
                                       </Box>
                                     }
                                     secondary={quizInfo.passed ? (
                                       <Typography variant="caption" color="success.main">Passed</Typography>
                                     ) : (
-                                      <Typography variant="caption" color="textSecondary">{canStartQuiz ? 'Not completed' : 'Complete previous video(s) first'}</Typography>
+                                      <Typography variant="caption" color="textSecondary">{canStartQuiz ? 'Not completed' : 'Complete previous content first'}</Typography>
                                     )}
                                   />
                                 </ListItemButton>
