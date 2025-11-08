@@ -95,13 +95,14 @@ const CreateCourse = () => {
           const response = await axios.get(`/api/courses/${courseId}`);
           const course = response.data.data;
           
-          // Populate form data
+          // Populate form data (ensure all fields stay controlled)
           setFormData({
             title: course.title || '',
             description: course.description || '',
             category: course.category || '',
             department: course.department || '',
-            level: course.level || 'beginner'
+            level: course.level || 'beginner',
+            isPublished: !!course.isPublished
           });
           
           // Set cover photo preview if exists
@@ -695,7 +696,7 @@ const CreateCourse = () => {
               </Grid>
               <Grid item xs={12}>
                 <FormControlLabel
-                  control={<Switch checked={formData.isPublished} onChange={(e) => handleInputChange('isPublished', e.target.checked)} />}
+                  control={<Switch checked={!!formData.isPublished} onChange={(e) => handleInputChange('isPublished', e.target.checked)} />}
                   label={t('createCourse.publish', 'Publish course')}
                 />
               </Grid>

@@ -23,7 +23,7 @@ import {
   CheckCircle as CheckIcon,
   ExpandMore as ExpandMoreIcon
 } from '@mui/icons-material';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
@@ -31,7 +31,9 @@ import { useTranslation } from 'react-i18next';
 const CourseDetail = () => {
   const { id: courseId } = useParams();
   const { user } = useAuth();
+  const location = useLocation();
   const { t } = useTranslation();
+  const adminPreviewFlag = new URLSearchParams(location.search).get('adminPreview') === '1';
   
   const [course, setCourse] = useState(null);
   const [userProgress, setUserProgress] = useState({});
@@ -86,8 +88,9 @@ const CourseDetail = () => {
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       }
       
+      const apiUrl = adminPreviewFlag ? `/api/courses/${courseId}?adminPreview=1` : `/api/courses/${courseId}`;
       const [courseResponse, progressResponse, enrolledResp] = await Promise.all([
-        axios.get(`/api/courses/${courseId}`),
+        axios.get(apiUrl),
         user?.role === 'student' ? axios.get(`/api/progress/course/${courseId}`) : Promise.resolve({ data: { data: [] } }),
         user?.role === 'student' ? axios.get('/api/courses/enrolled') : Promise.resolve({ data: { data: [] } })
       ]);
@@ -101,7 +104,8 @@ const CourseDetail = () => {
         clientIsEnrolled = Array.isArray(enrolledResp.data.data) && enrolledResp.data.data.some(c => c.id === courseId);
       }
       setIsEnrolled(clientIsEnrolled);
-      setIsTeacher(user?.role === 'teacher' && courseResponse.data.data.teacherId === user.id);
+      // Admins should have full teacher-like access only when adminPreview=1
+      setIsTeacher((user?.role === 'teacher' && courseResponse.data.data.teacherId === user.id) || (user?.role === 'admin' && adminPreviewFlag));
       // Build flattened video order for locking logic
       const allVideos = [];
       if (courseData?.chapters && Array.isArray(courseData.chapters)) {
@@ -429,7 +433,7 @@ const CourseDetail = () => {
                                           
                                           <Button
                                             component={Link}
-                                            to={resolvedVideoId ? `/video/${resolvedVideoId}` : '#'}
+                                            to={resolvedVideoId ? `/video/${resolvedVideoId}${adminPreviewFlag ? '?adminPreview=1' : ''}` : '#'}
                                             variant="contained"
                                             size="small"
                                             startIcon={<PlayIcon />}
@@ -457,7 +461,7 @@ const CourseDetail = () => {
                                               </Box>
                                               <Button
                                                 component={Link}
-                                                to={resolvedVideoId && quizInfo?.quizId ? `/quiz/${quizInfo.quizId}?videoId=${resolvedVideoId}` : '#'}
+                                                to={resolvedVideoId && quizInfo?.quizId ? `/quiz/${quizInfo.quizId}?videoId=${resolvedVideoId}${adminPreviewFlag ? '&adminPreview=1' : ''}` : '#'}
                                                 variant="outlined"
                                                 size="small"
                                                 startIcon={<PlayIcon />}

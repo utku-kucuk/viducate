@@ -6,11 +6,10 @@ const { validationResult } = require('express-validator');
 const getAllCourses = async (req, res) => {
   try {
     const where = {};
-    // Only show published and not adminDisabled courses to non-teachers/admins
-    if (!['teacher', 'admin'].includes(req.user.role)) {
-      where.isPublished = true;
-      where.adminDisabled = false;
-    }
+    // Public browse list should only show publicly visible courses for all roles
+    where.isPublished = true;
+    where.adminDisabled = false;
+    where.teacherPublishAllowed = true;
 
     const courses = await Course.findAll({
       where,
@@ -209,6 +208,13 @@ const enrollInCourse = async (req, res) => {
         message: 'Course not found'
       });
     }
+    // Prevent creator (teacher/admin who created) from enrolling into own course
+    if (course.teacherId === userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'You cannot enroll in your own course'
+      });
+    }
 
     // Check if already enrolled
     const existingEnrollment = await UserCourse.findOne({
@@ -299,11 +305,15 @@ const createCourse = async (req, res) => {
     const { title, description, category, department, level, chapters, thumbnail, videoIds, isPublished } = req.body;
 
     // Create course first
+    // Some existing DBs may still enforce NOT NULL on category; use empty string fallback
+    const safeCategory = category && String(category).trim() !== '' ? String(category).trim() : '';
+    const safeDepartment = department && String(department).trim() !== '' ? String(department).trim() : null;
+
     const course = await Course.create({
       title,
       description,
-      category: category || null,
-      department: department || null,
+      category: safeCategory,
+      department: safeDepartment,
       level,
       chapters: chapters || [],
       thumbnail: thumbnail || null,
@@ -386,15 +396,16 @@ const updateCourse = async (req, res) => {
       }
     }
     if (isPublished !== undefined) {
-      // Prevent any publish/unpublish if admin locked publishing
-      if (course.adminPublishLocked) {
-        return res.status(403).json({ success: false, message: 'Course publish state is locked by admin.' });
+      const desired = Boolean(isPublished);
+      // If admin disallowed publishing, block publishing but allow unpublish
+      if (desired === true && course.teacherPublishAllowed === false) {
+        return res.status(403).json({ success: false, message: 'Publishing is not allowed by admin.' });
       }
       // Prevent publishing if admin disabled
-      if (course.adminDisabled && Boolean(isPublished) === true) {
+      if (course.adminDisabled && desired === true) {
         return res.status(403).json({ success: false, message: 'Course is disabled by admin and cannot be published.' });
       }
-      updateData.isPublished = Boolean(isPublished);
+      updateData.isPublished = desired;
     }
 
     console.log('Update data:', updateData);
@@ -505,6 +516,8 @@ const getCourseById = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
+    const isAdmin = req.user.role === 'admin';
+    const adminPreview = isAdmin && (req.query.adminPreview === '1' || req.query.adminPreview === 'true');
 
   const course = await Course.findByPk(id, {
       include: [
@@ -529,17 +542,17 @@ const getCourseById = async (req, res) => {
       });
     }
 
-    // Check if user is enrolled or is the teacher
+    // Check if user is enrolled or is the teacher/admin
     const isEnrolled = await UserCourse.findOne({
       where: { userId, courseId: id }
     });
 
     const isTeacher = course.teacherId === userId;
 
-    // If user is not enrolled and not the teacher, return basic course info only
-  if (!isEnrolled && !isTeacher) {
-      // Hide unpublished courses from non-enrolled non-teachers
-      if (!course.isPublished || course.adminDisabled) {
+    // If user is not enrolled and not the teacher (and not adminPreview), return basic course info only
+    if (!isEnrolled && !isTeacher && !adminPreview) {
+      // Hide courses not publicly visible from non-enrolled non-teachers
+      if (!course.isPublished || course.adminDisabled || course.teacherPublishAllowed === false) {
         return res.status(404).json({ success: false, message: 'Course not found' });
       }
       const basicCourseInfo = {
@@ -563,6 +576,7 @@ const getCourseById = async (req, res) => {
 
     // Add enrollment status to the course data
     const courseData = course.toJSON();
+    // Only reflect real enrollment; adminPreview does not equal enrollment
     courseData.isEnrolled = !!isEnrolled;
     
     // Ensure chapters are properly parsed if they exist

@@ -16,8 +16,8 @@ const Question = sequelize.define('Question', {
     allowNull: true
   },
   imageUrl: {
-    type: DataTypes.STRING,
-    allowNull: true
+  type: DataTypes.TEXT,
+  allowNull: true
   },
   difficulty: {
     type: DataTypes.STRING,

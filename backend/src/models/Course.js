@@ -45,6 +45,10 @@ const Course = sequelize.define('Course', {
     type: DataTypes.BOOLEAN,
     defaultValue: false
   },
+  teacherPublishAllowed: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: true
+  },
   isPublished: {
     type: DataTypes.BOOLEAN,
     defaultValue: false

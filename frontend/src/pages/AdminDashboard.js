@@ -664,7 +664,7 @@ const AdminDashboard = () => {
                       <TableCell>{t('admin.courses.table.teacher', 'Teacher')}</TableCell>
                       <TableCell>{t('admin.courses.table.category', 'Category')}</TableCell>
                       <TableCell>{t('admin.courses.table.department', 'Department')}</TableCell>
-                      <TableCell>{t('admin.courses.table.published', 'Published')}</TableCell>
+                      <TableCell>{t('admin.courses.table.permission', 'Publish Permission')}</TableCell>
                       <TableCell>{t('admin.courses.table.actions', 'Actions')}</TableCell>
                     </TableRow>
                   </TableHead>
@@ -679,16 +679,16 @@ const AdminDashboard = () => {
                           <FormControlLabel
                             control={
                               <Switch
-                                checked={!!course.isPublished}
-                                onChange={(e) => updateCourse(course, { isPublished: e.target.checked })}
-                                color="success"
+                                checked={!!course.teacherPublishAllowed}
+                                onChange={(e) => updateCourse(course, { teacherPublishAllowed: e.target.checked })}
+                                color="primary"
                               />
                             }
-                            label={course.isPublished ? t('admin.courses.published', 'Published') : t('admin.courses.draft', 'Draft')}
+                            label={course.teacherPublishAllowed ? t('admin.courses.permissionAllowed', 'Allowed') : t('admin.courses.permissionDenied', 'Not Allowed')}
                           />
                         </TableCell>
                         <TableCell>
-                          <IconButton size="small" color="primary" onClick={() => navigate(`/course/${course.id}`)} title={t('admin.courses.preview', 'Preview')}>
+                          <IconButton size="small" color="primary" onClick={() => navigate(`/course/${course.id}?adminPreview=1`)} title={t('admin.courses.preview', 'Preview')}>
                             <VisibilityIcon />
                           </IconButton>
                           <IconButton size="small" color="error" onClick={() => deleteCourse(course)}>

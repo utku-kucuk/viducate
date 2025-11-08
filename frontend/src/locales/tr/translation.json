@@ -392,9 +392,11 @@
         "teacher": "Eğitmen",
         "category": "Kategori",
         "department": "Departman",
-        "published": "Yayın",
+        "permission": "Yayın İzni",
         "actions": "İşlemler"
-      }
+      },
+      "permissionAllowed": "İzin verildi",
+      "permissionDenied": "İzin verilmedi"
     },
     "taxonomy": {
       "title": "Sınıflandırma",

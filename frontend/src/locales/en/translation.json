@@ -392,9 +392,11 @@
         "teacher": "Teacher",
         "category": "Category",
         "department": "Department",
-        "published": "Published",
+        "permission": "Publish Permission",
         "actions": "Actions"
-      }
+      },
+      "permissionAllowed": "Allowed",
+      "permissionDenied": "Not Allowed"
     },
     "taxonomy": {
       "title": "Taxonomy",

@@ -28,7 +28,7 @@ import {
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 
-const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }) => {
+const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey, readonly = false }) => {
   const { user } = useAuth();
   const isTeacher = user && (user.role === 'teacher' || user.role === 'admin');
   const navigate = useNavigate();
@@ -64,6 +64,11 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey }
   // Fetch video progress for all videos in the course
   useEffect(() => {
     const fetchVideoProgress = async () => {
+      if (readonly) {
+        setVideoProgress({});
+        setLoading(false);
+        return;
+      }
       if (!courseData || !courseData.chapters) return;
       
       try {

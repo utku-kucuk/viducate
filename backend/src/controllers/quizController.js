@@ -555,6 +555,20 @@ async function assignQuizToVideos(req, res) {
 async function updateQuestion(req, res) {
   const t = await sequelize.transaction();
   try {
+    // Soft-ensure only critical tables needed for this operation
+    try {
+      const missing = await getMissingQuizTables();
+      const critical = missing.filter(tn => ['Quizzes', 'Questions', 'Options', 'QuizQuestions'].includes(tn));
+      if (critical.length > 0) {
+        // Attempt to sync required models without failing the request
+        await Quiz.sync({ alter: true });
+        await Question.sync({ alter: true });
+        await Option.sync({ alter: true });
+        await QuizQuestion.sync({ alter: true });
+      }
+    } catch (e) {
+      // Proceed even if ensure fails; downstream calls will error with clearer messages if truly missing
+    }
     const { quizId, questionId } = req.params;
     const { text, imageUrl, options } = req.body || {};
     const quiz = await Quiz.findByPk(quizId, { transaction: t });
@@ -566,7 +580,17 @@ async function updateQuestion(req, res) {
     if (!question) { await t.rollback(); return res.status(404).json({ error: 'Question not found' }); }
     const updates = {};
     if (typeof text === 'string') updates.text = text;
-    if (imageUrl !== undefined) updates.imageUrl = imageUrl || null;
+    if (imageUrl !== undefined) {
+      try {
+        const qi = sequelize.getQueryInterface();
+        const desc = await qi.describeTable('Questions');
+        if (desc && Object.prototype.hasOwnProperty.call(desc, 'imageUrl')) {
+          updates.imageUrl = imageUrl || null;
+        }
+      } catch (e) {
+        // ignore if unable to describe; skip imageUrl update to avoid 500 on older DBs
+      }
+    }
     if (Object.keys(updates).length > 0) {
       await question.update(updates, { transaction: t });
     }
@@ -577,10 +601,26 @@ async function updateQuestion(req, res) {
       const hasCorrect = options.some(o => o && o.isCorrect === true);
       const correctCount = options.filter(o => o && o.isCorrect === true).length;
       if (!hasCorrect || correctCount !== 1) { await t.rollback(); return res.status(400).json({ error: 'Exactly one option must be marked correct' }); }
-      await Option.destroy({ where: { questionId }, transaction: t });
+      // Update-in-place to avoid breaking existing AttemptAnswer FKs. Create new for missing; remove extras safely.
+      const existing = await Option.findAll({ where: { questionId }, transaction: t });
+      const existingMap = new Map(existing.map(o => [o.id, o]));
+      const incomingIds = new Set(options.filter(o => o && o.id).map(o => o.id));
+      // Update or create
       for (const opt of options) {
-        // eslint-disable-next-line no-await-in-loop
-        await Option.create({ questionId, text: opt.text, isCorrect: !!opt.isCorrect }, { transaction: t });
+        const targetText = String(opt.text || '').trim();
+        const targetCorrect = !!opt.isCorrect;
+        if (opt.id && existingMap.has(opt.id)) {
+          const row = existingMap.get(opt.id);
+          await row.update({ text: targetText, isCorrect: targetCorrect }, { transaction: t });
+        } else {
+          await Option.create({ questionId, text: targetText, isCorrect: targetCorrect }, { transaction: t });
+        }
+      }
+      // Delete removed options safely (first delete dependent answers)
+      const toDelete = existing.filter(o => !incomingIds.has(o.id)).map(o => o.id);
+      if (toDelete.length > 0) {
+        await AttemptAnswer.destroy({ where: { optionId: toDelete }, transaction: t });
+        await Option.destroy({ where: { id: toDelete }, transaction: t });
       }
     }
     await t.commit();

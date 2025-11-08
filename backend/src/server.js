@@ -142,13 +142,79 @@ async function ensureQuestionImageUrlColumn() {
     const desc = await qi.describeTable('Questions');
     if (!desc || !Object.prototype.hasOwnProperty.call(desc, 'imageUrl')) {
       await qi.addColumn('Questions', 'imageUrl', {
-        type: DataTypes.STRING,
+        type: DataTypes.TEXT,
         allowNull: true
       });
       console.log('🛠  Added missing column Questions.imageUrl');
+    } else {
+      // Ensure type is TEXT to support long URLs/base64
+      const col = desc.imageUrl;
+      // Some dialects expose type as string; be tolerant
+      const typeStr = String(col?.type || '').toLowerCase();
+      if (!typeStr.includes('text')) {
+        try {
+          await qi.changeColumn('Questions', 'imageUrl', {
+            type: DataTypes.TEXT,
+            allowNull: true
+          });
+          console.log('🛠  Updated Questions.imageUrl to TEXT');
+        } catch (e) {
+          console.warn('⚠️  Could not alter Questions.imageUrl to TEXT (dialect limitation?):', e?.message || e);
+        }
+      }
     }
   } catch (error) {
     console.warn('⚠️  Could not ensure Questions.imageUrl column:', error?.message || error);
+  }
+}
+
+async function ensureCourseNewColumns() {
+  try {
+    const qi = sequelize.getQueryInterface();
+    const desc = await qi.describeTable('Courses');
+    if (!desc) return;
+    if (!Object.prototype.hasOwnProperty.call(desc, 'department')) {
+      await qi.addColumn('Courses', 'department', {
+        type: DataTypes.STRING,
+        allowNull: true
+      });
+      console.log('🛠  Added missing column Courses.department');
+    }
+    if (!Object.prototype.hasOwnProperty.call(desc, 'adminDisabled')) {
+      await qi.addColumn('Courses', 'adminDisabled', {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
+      });
+      console.log('🛠  Added missing column Courses.adminDisabled');
+    }
+    if (!Object.prototype.hasOwnProperty.call(desc, 'adminPublishLocked')) {
+      await qi.addColumn('Courses', 'adminPublishLocked', {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
+      });
+      console.log('🛠  Added missing column Courses.adminPublishLocked');
+    }
+    if (!Object.prototype.hasOwnProperty.call(desc, 'teacherPublishAllowed')) {
+      await qi.addColumn('Courses', 'teacherPublishAllowed', {
+        type: DataTypes.BOOLEAN,
+        defaultValue: true
+      });
+      console.log('🛠  Added missing column Courses.teacherPublishAllowed');
+    }
+    // Relax category to allowNull if currently not null
+    if (desc.category && desc.category.allowNull === false) {
+      try {
+        await qi.changeColumn('Courses', 'category', {
+          type: DataTypes.STRING,
+          allowNull: true
+        });
+        console.log('🛠  Updated Courses.category to allow NULL');
+      } catch (e) {
+        console.warn('⚠️  Could not alter Courses.category allowNull (may not be supported on current dialect):', e?.message || e);
+      }
+    }
+  } catch (error) {
+    console.warn('⚠️  Could not ensure Courses new columns:', error?.message || error);
   }
 }
 
@@ -165,6 +231,7 @@ async function startServer() {
     
     // Ensure new columns that may not exist on older DBs
     await ensureQuestionImageUrlColumn();
+    await ensureCourseNewColumns();
     
     app.listen(PORT, () => {
       console.log(`🚀 Viducate server running on port ${PORT}`);

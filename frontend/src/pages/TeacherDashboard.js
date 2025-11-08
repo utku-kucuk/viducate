@@ -88,6 +88,11 @@ const TeacherDashboard = () => {
   const [quizToAssign, setQuizToAssign] = useState(null);
   const [selectedCourseIds, setSelectedCourseIds] = useState([]);
   const [assignmentRows, setAssignmentRows] = useState([{ id: 1, courseId: '', videoId: '' }]);
+  // Progress dialog
+  const [progressDialogOpen, setProgressDialogOpen] = useState(false);
+  const [progressLoading, setProgressLoading] = useState(false);
+  const [progressItems, setProgressItems] = useState([]);
+  const [progressTarget, setProgressTarget] = useState({ studentId: '', courseId: '', name: '', courseTitle: '' });
 
   const resolveImageUrl = (url) => {
     if (!url) return url;
@@ -124,7 +129,12 @@ const TeacherDashboard = () => {
       setSnackbar({ open: true, message: nextVal ? 'Course published' : 'Course unpublished', severity: 'success' });
     } catch (error) {
       console.error('Error updating course status:', error);
-      setSnackbar({ open: true, message: 'Failed to update course status', severity: 'error' });
+      const msg = error?.response?.data?.message || '';
+      if (error?.response?.status === 403 && /not allowed|locked|admin/i.test(msg)) {
+        setSnackbar({ open: true, message: 'Yayın izni admin tarafından engellenmiştir. Lütfen admin ile iletişime geçin.', severity: 'warning' });
+      } else {
+        setSnackbar({ open: true, message: 'Failed to update course status', severity: 'error' });
+      }
     }
   };
 
@@ -392,8 +402,8 @@ const TeacherDashboard = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {courses.map((course) => (
-                      <TableRow key={course.id} hover>
+                    {courses.map((course, idx) => (
+                      <TableRow key={`${course.id}-${idx}`} hover>
                         <TableCell>
                           <Box>
                             <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
@@ -521,8 +531,8 @@ const TeacherDashboard = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {students.map((student) => (
-                      <TableRow key={student.id} hover>
+                    {students.map((student, idx) => (
+                      <TableRow key={`${student.id}-${idx}`} hover>
                         <TableCell>
                           <Box display="flex" alignItems="center" gap={2}>
                             <Avatar sx={{ bgcolor: 'primary.main' }}>
@@ -565,7 +575,31 @@ const TeacherDashboard = () => {
                         <TableCell>
                           <IconButton
                             size="small"
-                            onClick={() => navigate(`/student-progress/${student.id}`)}
+                            onClick={async () => {
+                              try {
+                                setProgressTarget({ studentId: student.id, courseId: student.courseId, name: `${student.firstName} ${student.lastName}`, courseTitle: student.courseTitle });
+                                setProgressDialogOpen(true);
+                                setProgressLoading(true);
+                                const token = localStorage.getItem('token');
+                                if (token) axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+                                const resp = await axios.get(`/api/progress/student/${student.id}/course/${student.courseId}`);
+                                const arr = resp?.data?.progress || [];
+                                // normalize
+                                const norm = arr.map(p => ({
+                                  videoId: p.videoId,
+                                  title: p.video?.title || 'Video',
+                                  watchPercentage: Math.round(Number(p.watchPercentage || 0)),
+                                  isCompleted: !!p.isCompleted,
+                                  quizPassed: !!p.quizPassed,
+                                  lastWatchedAt: p.lastWatchedAt ? new Date(p.lastWatchedAt).toLocaleString() : '-'
+                                })).sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+                                setProgressItems(norm);
+                              } catch (err) {
+                                setSnackbar({ open: true, message: 'Failed to load student progress', severity: 'error' });
+                              } finally {
+                                setProgressLoading(false);
+                              }
+                            }}
                             title="View Progress"
                             color="primary"
                           >
@@ -649,7 +683,12 @@ const TeacherDashboard = () => {
                 <TextField fullWidth type="number" label="Pass Threshold (%)" value={passThreshold} onChange={(e) => setPassThreshold(Math.max(1, Math.min(100, Number(e.target.value) || 70)))} />
               </Grid>
               <Grid item xs={12} md={4}>
-                <Select fullWidth displayEmpty value={selectedCourseId} onChange={(e) => { setSelectedCourseId(e.target.value); setSelectedVideoId(''); }}>
+                <Select
+                  fullWidth
+                  displayEmpty
+                  value={courses.some(c => c.id === selectedCourseId) ? selectedCourseId : ''}
+                  onChange={(e) => { setSelectedCourseId(e.target.value); setSelectedVideoId(''); }}
+                >
                   <MenuItem value="" disabled>Select Course</MenuItem>
                   {courses.map(c => (
                     <MenuItem key={c.id} value={c.id}>{c.title}</MenuItem>
@@ -657,7 +696,18 @@ const TeacherDashboard = () => {
                 </Select>
               </Grid>
               <Grid item xs={12} md={12}>
-                <Select fullWidth displayEmpty value={selectedVideoId} onChange={(e) => setSelectedVideoId(e.target.value)} disabled={!selectedCourseId}>
+                <Select
+                  fullWidth
+                  displayEmpty
+                  value={
+                    selectedCourseId &&
+                    courses.find(c => c.id === selectedCourseId)?.videos?.some(v => v.id === selectedVideoId)
+                      ? selectedVideoId
+                      : ''
+                  }
+                  onChange={(e) => setSelectedVideoId(e.target.value)}
+                  disabled={!selectedCourseId}
+                >
                   <MenuItem value="" disabled>Select Video (Chapter)</MenuItem>
                   {courses.find(c => c.id === selectedCourseId)?.videos?.sort((a, b) => (a.order || 0) - (b.order || 0)).map(v => (
                     <MenuItem key={v.id} value={v.id}>{v.title}</MenuItem>
@@ -761,8 +811,8 @@ const TeacherDashboard = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {myQuizzes.map(q => (
-                      <TableRow key={q.id} hover>
+                    {myQuizzes.map((q, idx) => (
+                      <TableRow key={`${q.id}-${idx}`} hover>
                         <TableCell>
                           <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>{q.title}</Typography>
                           <Typography variant="caption" color="textSecondary">Pass ≥ {Math.round((q.passThreshold || 0.7) * 100)}%</Typography>
@@ -962,7 +1012,7 @@ const TeacherDashboard = () => {
                 <Select
                   fullWidth
                   displayEmpty
-                  value={row.courseId}
+                  value={courses.some(c => c.id === row.courseId) ? row.courseId : ''}
                   onChange={(e) => setAssignmentRows(prev => prev.map(r => r.id === row.id ? { ...r, courseId: e.target.value, videoId: '' } : r))}
                 >
                   <MenuItem value="" disabled>Select Course</MenuItem>
@@ -973,7 +1023,12 @@ const TeacherDashboard = () => {
                 <Select
                   fullWidth
                   displayEmpty
-                  value={row.videoId}
+                  value={
+                    row.courseId &&
+                    courses.find(c => c.id === row.courseId)?.videos?.some(v => v.id === row.videoId)
+                      ? row.videoId
+                      : ''
+                  }
                   onChange={(e) => setAssignmentRows(prev => prev.map(r => r.id === row.id ? { ...r, videoId: e.target.value } : r))}
                   disabled={!row.courseId}
                 >
@@ -1033,6 +1088,61 @@ const TeacherDashboard = () => {
           {snackbar.message}
         </Alert>
       </Snackbar>
+      {/* Student Progress Dialog */}
+      <Dialog open={progressDialogOpen} onClose={() => setProgressDialogOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Progress - {progressTarget.name} ({progressTarget.courseTitle})</DialogTitle>
+        <DialogContent>
+          {progressLoading ? (
+            <Box sx={{ py: 4, display: 'flex', justifyContent: 'center' }}>
+              <LinearProgress sx={{ width: '60%' }} />
+            </Box>
+          ) : (
+            <TableContainer component={Paper} sx={{ mt: 1 }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 'bold' }}>Video</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>Watched</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>Completed</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>Quiz</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>Last Watched</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {progressItems.map((it, idx) => (
+                    <TableRow key={`${it.videoId}-${idx}`}>
+                      <TableCell>{it.title}</TableCell>
+                      <TableCell>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <LinearProgress variant="determinate" value={it.watchPercentage} sx={{ width: 100, height: 8, borderRadius: 4 }} />
+                          <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{it.watchPercentage}%</Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell>
+                        <Chip size="small" label={it.isCompleted ? 'Yes' : 'No'} color={it.isCompleted ? 'success' : 'default'} />
+                      </TableCell>
+                      <TableCell>
+                        <Chip size="small" label={it.quizPassed ? 'Passed' : '—'} color={it.quizPassed ? 'success' : 'default'} />
+                      </TableCell>
+                      <TableCell>{it.lastWatchedAt}</TableCell>
+                    </TableRow>
+                  ))}
+                  {progressItems.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5}>
+                        <Typography variant="body2" color="textSecondary">No progress yet.</Typography>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setProgressDialogOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };

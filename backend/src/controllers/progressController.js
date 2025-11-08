@@ -1,4 +1,4 @@
-const { Progress, Video, User, Course } = require('../models');
+const { Progress, Video, User, Course, UserCourse, QuizAttempt } = require('../models');
 
 // Calculate engagement score (0-100)
 function calculateEngagementScore(progress) {
@@ -92,6 +92,23 @@ const updateProgress = async (req, res) => {
       watchedSegments
     } = req.body;
     const userId = req.user.id;
+
+    // Ensure user is enrolled in the video's course; disallow progress in preview/owner mode
+    const videoRecord = await Video.findByPk(videoId);
+    if (!videoRecord) {
+      return res.status(404).json({ error: 'Video not found.' });
+    }
+    const courseId = videoRecord.courseId;
+    // If user is the course owner (teacher/admin who created), block progress updates
+    const course = await Course.findByPk(courseId);
+    if (course && course.teacherId === userId) {
+      return res.status(403).json({ error: 'Progress updates are not allowed for course owners.' });
+    }
+    // If not enrolled, block progress updates
+    const isEnrolled = await UserCourse.findOne({ where: { userId, courseId } });
+    if (!isEnrolled) {
+      return res.status(403).json({ error: 'Progress updates require enrollment.' });
+    }
 
     // Find or create progress record
     let progress = await Progress.findOne({
@@ -371,7 +388,36 @@ const getStudentProgress = async (req, res) => {
       order: [['lastWatchedAt', 'DESC']]
     });
 
-    res.json({ progress });
+    // Enrich with quiz pass info for the student on each video
+    try {
+      const videoIds = progress.map(p => p.videoId);
+      let passMap = new Map();
+      if (videoIds.length > 0) {
+        const attempts = await QuizAttempt.findAll({
+          where: { userId: studentId, videoId: videoIds, passed: true },
+          order: [['createdAt', 'DESC']]
+        });
+        attempts.forEach(a => {
+          // mark as passed for this video id
+          if (!passMap.has(a.videoId)) passMap.set(a.videoId, true);
+        });
+      }
+      const enriched = progress.map(p => ({
+        id: p.id,
+        videoId: p.videoId,
+        video: p.video,
+        watchedDuration: p.watchedDuration,
+        totalDuration: p.totalDuration,
+        watchPercentage: p.watchPercentage,
+        isCompleted: p.isCompleted,
+        lastWatchedAt: p.lastWatchedAt,
+        quizPassed: !!passMap.get(p.videoId)
+      }));
+      return res.json({ progress: enriched });
+    } catch (e) {
+      // fallback to raw progress if enrichment fails
+      return res.json({ progress });
+    }
   } catch (error) {
     console.error('Get student progress error:', error);
     res.status(500).json({ error: 'Failed to get student progress.' });

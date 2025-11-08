@@ -36,13 +36,14 @@ const VideoPlayer = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user } = useAuth?.() || { user: null };
-  const isTeacher = user && (user.role === 'teacher' || user.role === 'admin');
+  const adminPreview = new URLSearchParams(location.search).get('adminPreview') === '1';
   
   // Video data states
   const [videoData, setVideoData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [courseData, setCourseData] = useState(null);
+  const [readonlyMode, setReadonlyMode] = useState(adminPreview);
   const [nextVideo, setNextVideo] = useState(null);
   const [selectedQuality, setSelectedQuality] = useState(null);
   const [availableQualities, setAvailableQualities] = useState([]);
@@ -71,6 +72,7 @@ const VideoPlayer = () => {
   const [quizResult, setQuizResult] = useState(null); // { passed, scorePct, numCorrect, numQuestions }
   const [progressVersion, setProgressVersion] = useState(0);
   const [maxWatchedTime, setMaxWatchedTime] = useState(0);
+  const [resumeAt, setResumeAt] = useState(0);
   const [isTabVisible, setIsTabVisible] = useState(true);
   const hasRefreshedSidebarForCompletionRef = useRef({});
   
@@ -189,9 +191,15 @@ const VideoPlayer = () => {
   // Fetch course data to determine next video
   const fetchCourseData = async (courseId) => {
     try {
-      const response = await axios.get(`/api/courses/${courseId}`);
+      const url = adminPreview ? `/api/courses/${courseId}?adminPreview=1` : `/api/courses/${courseId}`;
+      const response = await axios.get(url);
       const course = response.data.data;
       setCourseData(course);
+      // Ensure readonly when in admin preview mode
+      if (adminPreview) setReadonlyMode(true);
+      // Determine readonly mode: only enrolled users can persist progress
+      const enrolled = Boolean(course?.isEnrolled);
+      setReadonlyMode(!enrolled);
       const allVideos = [];
       if (course.chapters && Array.isArray(course.chapters)) {
         course.chapters.forEach(chapter => {
@@ -282,10 +290,12 @@ const VideoPlayer = () => {
         if (token) {
           axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
         }
-        const pgResp = await axios.get(`/api/progress/video/${videoId}`);
-        const progress = pgResp?.data?.progress || null;
-        if (progress) {
-          setNotes(progress.notes || '');
+        // Only load stored progress for enrolled users
+        if (!readonlyMode) {
+          const pgResp = await axios.get(`/api/progress/video/${videoId}`);
+          const progress = pgResp?.data?.progress || null;
+          if (progress) {
+            setNotes(progress.notes || '');
           const baseDuration = typeof video?.duration === 'number' && video.duration > 0 ? video.duration : duration;
           const sanitized = mergeSegments(clampSegmentsToDuration(progress.watchedSegments || [], baseDuration));
           const totalWatched = sanitized.reduce((sum, s) => sum + (s.end - s.start), 0);
@@ -294,9 +304,13 @@ const VideoPlayer = () => {
           setIsCompleted(Boolean(progress.isCompleted));
           setWatchedSegments(sanitized);
           setMaxWatchedTime(totalWatched);
-          if (progress.isCompleted === true && videoId && !hasRefreshedSidebarForCompletionRef.current[videoId]) {
-            hasRefreshedSidebarForCompletionRef.current[videoId] = true;
-            setProgressVersion(v => v + 1);
+          // compute resume point from max end of segments
+          const maxEnd = sanitized.reduce((mx, s) => Math.max(mx, s.end), 0);
+          setResumeAt(Math.min(Math.max(maxEnd - 1, 0), baseDuration || 0));
+            if (progress.isCompleted === true && videoId && !hasRefreshedSidebarForCompletionRef.current[videoId]) {
+              hasRefreshedSidebarForCompletionRef.current[videoId] = true;
+              setProgressVersion(v => v + 1);
+            }
           }
         }
       } catch (err) {
@@ -342,7 +356,7 @@ const VideoPlayer = () => {
 
   // Save progress to backend
   const saveProgress = async () => {
-    if (!videoData || !duration) return;
+    if (!videoData || !duration || readonlyMode) return;
     try {
       const combined = getAllWatchedForCalc();
       let totalWatchedTime = 0;
@@ -378,7 +392,9 @@ const VideoPlayer = () => {
     if (!videoData) return;
     try {
       setSavingNotes(true);
-      await axios.put(`/api/progress/video/${videoId}/notes`, { notes });
+      if (!readonlyMode) {
+        await axios.put(`/api/progress/video/${videoId}/notes`, { notes });
+      }
       setLastNotesSavedAt(new Date());
       setNotesSavedOpen(true);
     } catch (err) {
@@ -395,6 +411,15 @@ const VideoPlayer = () => {
     setDuration(video.duration || (player?.duration ? player.duration() : 0));
     setCurrentTime(video.currentTime || 0);
     setPlayer(video);
+    // Seek to resume point if available and not in readonly mode
+    if (!readonlyMode && resumeAt && !isNaN(resumeAt)) {
+      try {
+        const target = Math.max(0, Math.min(resumeAt, video.duration || resumeAt));
+        video.currentTime = target;
+      } catch (e) {
+        // ignore seek failures
+      }
+    }
   };
 
   const handleVideoTimeUpdate = (event) => {
@@ -416,11 +441,11 @@ const VideoPlayer = () => {
       const calculatedPercentage = durationLocal > 0 ? (combinedWatched / durationLocal) * 100 : 0;
       const progressPercentage = Math.min(calculatedPercentage, 100);
       setCurrentProgress(progressPercentage);
-      if (!isCompleted && progressPercentage >= 90) {
+      if (!readonlyMode && !isCompleted && progressPercentage >= 90) {
         saveProgress();
       }
     }
-    if (Math.floor(currentTime || 0) % 3 === 0 && (currentTime || 0) !== lastSaveTime) {
+    if (!readonlyMode && Math.floor(currentTime || 0) % 3 === 0 && (currentTime || 0) !== lastSaveTime) {
       setLastSaveTime(currentTime || 0);
       saveProgress();
     }
@@ -442,15 +467,17 @@ const VideoPlayer = () => {
     setIsPlaying(false);
     setIsWatching(false);
     setIsCurrentlyWatching(false);
-    saveProgress();
+    if (!readonlyMode) saveProgress();
   };
 
   const handleVideoEnded = () => {
     setIsPlaying(false);
     setIsWatching(false);
     setIsCurrentlyWatching(false);
-    setTimeout(() => { saveProgress(); }, 1000);
-    saveProgress();
+    if (!readonlyMode) {
+      setTimeout(() => { saveProgress(); }, 1000);
+      saveProgress();
+    }
   };
 
   const handleVideoSeeking = (event) => {
@@ -480,7 +507,7 @@ const VideoPlayer = () => {
     }
     await saveProgress();
     if (nextVideo) {
-      navigate(`/video/${nextVideo.id}`);
+      navigate(`/video/${nextVideo.id}${adminPreview ? '?adminPreview=1' : ''}`);
     }
   };
 
@@ -613,7 +640,8 @@ const VideoPlayer = () => {
         courseData={courseData} 
         currentVideoId={videoId}
         refreshKey={progressVersion}
-        onVideoSelect={(video) => navigate(`/video/${video.id}`)}
+        readonly={readonlyMode}
+        onVideoSelect={(video) => navigate(`/video/${video.id}${adminPreview ? '?adminPreview=1' : ''}`)}
       />
       
       {/* Main Content */}
@@ -763,9 +791,9 @@ const VideoPlayer = () => {
                   if (quizInfo.hasQuiz) {
                     navigate(`/quiz/${quizInfo.quizId}?videoId=${videoId}`);
                   } else if (nextVideo?.id) {
-                    navigate(`/video/${nextVideo.id}`);
+                    navigate(`/video/${nextVideo.id}${adminPreview ? '?adminPreview=1' : ''}`);
                   } else if (videoData?.courseId) {
-                    navigate(`/course/${videoData.courseId}`);
+                    navigate(`/course/${videoData.courseId}${adminPreview ? '?adminPreview=1' : ''}`);
                   }
                 }}
                 sx={{

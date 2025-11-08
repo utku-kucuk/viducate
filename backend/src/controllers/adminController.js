@@ -1,4 +1,4 @@
-const { User, Course, Video, Progress } = require('../models');
+const { User, Course, Video, Progress, UserCourse } = require('../models');
 const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
 const { generateSimplePassword, sendCredentialsEmail, sendBulkCredentialsEmails } = require('../services/emailService');
@@ -229,6 +229,27 @@ const getAllCoursesAdmin = async (req, res) => {
     const offset = (page - 1) * limit;
 
     const { count, rows: courses } = await Course.findAndCountAll({
+      attributes: [
+        'id',
+        'title',
+        'description',
+        'category',
+        'department',
+        'level',
+        'isPublished',
+        'adminDisabled',
+        'teacherPublishAllowed',
+        // Omit adminPublishLocked from attributes to avoid SELECT errors if column missing
+        'duration',
+        'totalVideos',
+        'studentCount',
+        'rating',
+        'totalRatings',
+        'thumbnail',
+        'teacherId',
+        'createdAt',
+        'updatedAt'
+      ],
       include: [
         {
           model: User,
@@ -237,9 +258,11 @@ const getAllCoursesAdmin = async (req, res) => {
         },
         {
           model: Video,
+          as: 'videos',
           attributes: ['id']
         }
       ],
+      distinct: true,
       order: [['createdAt', 'DESC']],
       limit,
       offset
@@ -265,25 +288,38 @@ const getAllCoursesAdmin = async (req, res) => {
 };
 
 // Delete course (admin only)
+const { sequelize } = require('../config/database');
 const deleteCourseAdmin = async (req, res) => {
+  const transaction = await sequelize.transaction();
   try {
     const { id } = req.params;
 
-    const course = await Course.findByPk(id);
+    const course = await Course.findByPk(id, { transaction });
     if (!course) {
+      await transaction.rollback();
       return res.status(404).json({
         success: false,
         message: 'Course not found'
       });
     }
 
-    await course.destroy();
+    // Cleanup related data (mirror teacher delete flow)
+    const videos = await Video.findAll({ where: { courseId: id }, transaction });
+    const videoIds = videos.map(v => v.id);
+    if (videoIds.length > 0) {
+      await Progress.destroy({ where: { videoId: videoIds }, transaction });
+    }
+    await UserCourse.destroy({ where: { courseId: id }, transaction });
+    await Video.destroy({ where: { courseId: id }, transaction });
+    await course.destroy({ transaction });
 
+    await transaction.commit();
     res.json({
       success: true,
       message: 'Course deleted successfully'
     });
   } catch (error) {
+    await transaction.rollback();
     console.error('Error deleting course:', error);
     res.status(500).json({
       success: false,
@@ -296,7 +332,7 @@ const deleteCourseAdmin = async (req, res) => {
 const updateCourseAdmin = async (req, res) => {
   try {
     const { id } = req.params;
-    const { adminDisabled, isPublished } = req.body;
+    const { adminDisabled, teacherPublishAllowed } = req.body;
     const course = await Course.findByPk(id);
     if (!course) {
       return res.status(404).json({ success: false, message: 'Course not found' });
@@ -306,22 +342,18 @@ const updateCourseAdmin = async (req, res) => {
       updates.adminDisabled = adminDisabled;
       if (adminDisabled) {
         updates.isPublished = false;
-        updates.adminPublishLocked = true;
       }
     }
-    if (typeof isPublished === 'boolean') {
-      // Only allow publish if not adminDisabled
-      if (course.adminDisabled || updates.adminDisabled === true) {
+    if (typeof teacherPublishAllowed === 'boolean') {
+      updates.teacherPublishAllowed = teacherPublishAllowed;
+      if (!teacherPublishAllowed) {
+        // When admin disallows publishing, force unpublish
         updates.isPublished = false;
-        updates.adminPublishLocked = true;
-      } else {
-        updates.isPublished = isPublished;
-        updates.adminPublishLocked = true;
       }
     }
     await course.update(updates);
-    // propagate publish status to videos
-    if (updates.isPublished !== undefined) {
+    // propagate publish status to videos only when we forced unpublish
+    if (updates.isPublished === false) {
       await Video.update({ isPublished: updates.isPublished }, { where: { courseId: id } });
     }
     res.json({ success: true, data: course, message: 'Course updated' });
@@ -463,15 +495,14 @@ const createUser = async (req, res) => {
           role: user.role,
           isPasswordChangeRequired: user.isPasswordChangeRequired
         },
-        tempPassword: sendEmail && !emailSent ? tempPassword : undefined, // Return password only if email failed
+        // Always return the temporary password to admin creating the user
+        tempPassword,
         emailSent,
         emailError: emailError || undefined
       },
       message: emailSent 
-        ? 'Kullanıcı oluşturuldu ve email başarıyla gönderildi ✅' 
-        : emailError && emailError.includes('testing emails')
-        ? 'Kullanıcı oluşturuldu. Email gönderilemedi: Resend test modunda sadece kayıtlı email adresinize (utkcursor@gmail.com) gönderebilirsiniz. Diğer adresler için domain doğrulaması gerekli. Şifreyi aşağıdaki dialog\'da görebilirsiniz.'
-        : 'Kullanıcı oluşturuldu. Email gönderilemedi. Şifreyi aşağıdaki dialog\'da görebilirsiniz.'
+        ? 'Kullanıcı oluşturuldu ve email gönderildi. Geçici şifre aşağıda görüntülenmektedir.' 
+        : 'Kullanıcı oluşturuldu. Email gönderilemedi; geçici şifre aşağıda görüntülenmektedir.'
     });
   } catch (error) {
     console.error('Error creating user:', error);
