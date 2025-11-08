@@ -16,7 +16,8 @@ import {
   AccordionSummary,
   AccordionDetails,
   Alert,
-  CircularProgress
+  CircularProgress,
+  Button
 } from '@mui/material';
 import {
   PlayArrow as PlayIcon,
@@ -39,6 +40,7 @@ const CourseDetail = () => {
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [isTeacher, setIsTeacher] = useState(false);
   const [flatVideos, setFlatVideos] = useState([]);
+  const [videoQuizInfo, setVideoQuizInfo] = useState({});
 
   // Resolve a real video id from chapter video data produced at course creation
   const resolveVideoId = (chapterVideo) => {
@@ -133,6 +135,20 @@ const CourseDetail = () => {
         });
         setUserProgress(progressMap);
         setLastWatchedVideoId(latestVideoId);
+      }
+
+      // Fetch quiz info for each resolved video id
+      try {
+        const quizPromises = allVideos.map(async (video) => {
+          const resp = await axios.get(`/api/quizzes/video/${video.id}`);
+          return { videoId: video.id, info: resp.data || { hasQuiz: false } };
+        });
+        const results = await Promise.allSettled(quizPromises);
+        const map = {};
+        results.forEach(r => { if (r.status === 'fulfilled') { map[r.value.videoId] = r.value.info; } });
+        setVideoQuizInfo(map);
+      } catch (e) {
+        // ignore errors
       }
     } catch (error) {
       console.error('Error fetching course data:', error);
@@ -352,6 +368,7 @@ const CourseDetail = () => {
                                     const progress = userProgress[resolvedVideoId || video.id];
                                     const isCompleted = progress?.isCompleted;
                                   const isWatched = progress?.watchPercentage > 0;
+                                  const quizInfo = videoQuizInfo[resolvedVideoId || video.id] || { hasQuiz: false };
 
                                     return (
                                       <React.Fragment key={resolvedVideoId || video.id || `video-${videoIndex}`}>
@@ -422,6 +439,27 @@ const CourseDetail = () => {
                                           </Button>
                                         </ListItem>
                                         
+                                        {quizInfo.hasQuiz && (
+                                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', ml: 5, my: 1 }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                              {quizInfo.passed ? <CheckIcon color="success" /> : <PlayIcon color="disabled" />}
+                                              <Typography variant="body2">Quiz: {quizInfo.quizTitle || 'Chapter Quiz'}</Typography>
+                                              {quizInfo.isRequired && <Chip label="Required" size="small" />}
+                                              {quizInfo.passed && <Chip label="Completed" size="small" color="success" />}
+                                            </Box>
+                                            <Button
+                                              component={Link}
+                                              to={resolvedVideoId ? `/video/${resolvedVideoId}?startQuiz=1` : '#'}
+                                              variant="outlined"
+                                              size="small"
+                                              startIcon={<PlayIcon />}
+                                              disabled={!resolvedVideoId || (!isTeacher && (!isEnrolled || !isVideoUnlocked(resolvedVideoId)))}
+                                            >
+                                              {quizInfo.passed ? 'Review' : 'Start Quiz'}
+                                            </Button>
+                                          </Box>
+                                        )}
+
                                         {videoIndex < section.videos.length - 1 && <Divider />}
                                       </React.Fragment>
                                     );

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import {
   Container,
   Typography,
@@ -13,7 +14,11 @@ import {
   Alert as MuiAlert,
   MenuItem,
   Menu,
-  IconButton
+  IconButton,
+  RadioGroup,
+  Radio,
+  FormControlLabel,
+  Divider
 } from '@mui/material';
 import { 
   ArrowBack,
@@ -26,7 +31,10 @@ import axios from 'axios';
 
 const VideoPlayer = () => {
   const { videoId } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth?.() || { user: null };
+  const isTeacher = user && (user.role === 'teacher' || user.role === 'admin');
   
   // Video data states
   const [videoData, setVideoData] = useState(null);
@@ -53,6 +61,12 @@ const VideoPlayer = () => {
   const [lastSaveTime, setLastSaveTime] = useState(0);
   const [isCurrentlyWatching, setIsCurrentlyWatching] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [quizInfo, setQuizInfo] = useState({ hasQuiz: false, isRequired: false, unlockNextOnPass: true, quizId: null, quizTitle: '', passed: false });
+  const [quizLoading, setQuizLoading] = useState(false);
+  const [quizAttempt, setQuizAttempt] = useState(null); // { attemptId, quiz: {id,title,passThreshold}, questions: [...] }
+  const [quizAnswers, setQuizAnswers] = useState({}); // questionId -> optionId
+  const [quizSubmitting, setQuizSubmitting] = useState(false);
+  const [quizResult, setQuizResult] = useState(null); // { passed, scorePct, numCorrect, numQuestions }
   const [progressVersion, setProgressVersion] = useState(0);
   const [maxWatchedTime, setMaxWatchedTime] = useState(0);
   const [isTabVisible, setIsTabVisible] = useState(true);
@@ -290,6 +304,30 @@ const VideoPlayer = () => {
       if (video.courseId) {
         await fetchCourseData(video.courseId);
       }
+
+      // Fetch quiz info for this video
+      try {
+        setQuizLoading(true);
+        const token2 = localStorage.getItem('token');
+        if (token2) {
+          axios.defaults.headers.common['Authorization'] = `Bearer ${token2}`;
+        }
+        const qresp = await axios.get(`/api/quizzes/video/${videoId}`);
+        const qi = qresp?.data || { hasQuiz: false };
+        setQuizInfo({
+          hasQuiz: !!qi.hasQuiz,
+          isRequired: !!qi.isRequired,
+          unlockNextOnPass: !!qi.unlockNextOnPass,
+          quizId: qi.quizId || null,
+          quizTitle: qi.quizTitle || 'Quiz',
+          passed: !!qi.passed
+        });
+      } catch (err) {
+        console.error('Failed to get quiz info:', err);
+        setQuizInfo({ hasQuiz: false, isRequired: false, unlockNextOnPass: true, quizId: null, quizTitle: '', passed: false });
+      } finally {
+        setQuizLoading(false);
+      }
     } catch (err) {
       console.error('Error fetching video:', err);
       setError('Failed to load video. Please try again.');
@@ -443,6 +481,56 @@ const VideoPlayer = () => {
       navigate(`/video/${nextVideo.id}`);
     }
   };
+
+  const startQuiz = async () => {
+    if (!quizInfo.quizId) return;
+    try {
+      const token = localStorage.getItem('token');
+      if (token) axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      const resp = await axios.post(`/api/quizzes/${quizInfo.quizId}/attempts`, { videoId });
+      const data = resp?.data?.data;
+      setQuizAttempt(data);
+      setQuizAnswers({});
+      setQuizResult(null);
+    } catch (err) {
+      console.error('Failed to start quiz:', err?.response?.data || err);
+      const serverMsg = err?.response?.data?.error || err?.message || 'Failed to start quiz.';
+      const details = err?.response?.data?.details;
+      setError(details ? `${serverMsg} - ${JSON.stringify(details)}` : serverMsg);
+    }
+  };
+
+  const submitQuiz = async () => {
+    if (!quizAttempt?.attemptId) return;
+    try {
+      setQuizSubmitting(true);
+      const answersArray = Object.entries(quizAnswers).map(([questionId, optionId]) => ({ questionId, optionId }));
+      const token = localStorage.getItem('token');
+      if (token) axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      const resp = await axios.post(`/api/quizzes/attempts/${quizAttempt.attemptId}/submit`, { answers: answersArray });
+      const result = resp?.data?.data;
+      setQuizResult(result);
+      if (result?.passed) {
+        setQuizInfo(prev => ({ ...prev, passed: true }));
+        setIsCompleted(true);
+      }
+    } catch (err) {
+      console.error('Failed to submit quiz:', err);
+      setError('Failed to submit quiz. Please try again.');
+    } finally {
+      setQuizSubmitting(false);
+    }
+  };
+
+  // Auto-start quiz if startQuiz=1 query present
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const shouldStart = params.get('startQuiz') === '1';
+    if (shouldStart && quizInfo.hasQuiz && !quizInfo.passed && !quizAttempt) {
+      startQuiz();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search, quizInfo, quizAttempt]);
 
   // Tab visibility and focus control
   useEffect(() => {
@@ -657,27 +745,33 @@ const VideoPlayer = () => {
             </Box>
           </Box>
 
-          {/* Next Video Button */}
+          {/* Next Video Button (gated by quiz if required) */}
           {nextVideo && (
             <Box sx={{ mb: 3, textAlign: 'center' }}>
+              {(() => {
+                const requiresQuiz = quizInfo.hasQuiz && quizInfo.isRequired;
+                const canProceed = requiresQuiz ? quizInfo.passed : isCompleted;
+                return (
               <Button
                 variant="contained"
                 size="large"
                 startIcon={<NextIcon />}
-                disabled={!isCompleted}
+                disabled={!canProceed}
                 onClick={handleGoToNext}
                 sx={{
                   px: 4,
                   py: 1.5,
                   fontSize: '1.1rem',
                   fontWeight: 'bold',
-                  bgcolor: isCompleted ? 'success.main' : 'grey.400',
-                  '&:hover': { bgcolor: isCompleted ? 'success.dark' : 'grey.500' },
+                  bgcolor: canProceed ? 'success.main' : 'grey.400',
+                  '&:hover': { bgcolor: canProceed ? 'success.dark' : 'grey.500' },
                   '&:disabled': { bgcolor: 'grey.300', color: 'grey.500' }
                 }}
               >
-                {isCompleted ? 'Next Video' : 'Complete this video to unlock next video'}
+                {canProceed ? 'Next Video' : (quizInfo.hasQuiz && quizInfo.isRequired ? 'Pass the quiz to unlock next video' : 'Complete this video to unlock next video')}
               </Button>
+                );
+              })()}
               {nextVideo && (
                 <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
                   Next: {nextVideo.title}
@@ -686,8 +780,8 @@ const VideoPlayer = () => {
             </Box>
           )}
 
-          {/* Course Completion Message */}
-          {!nextVideo && isCompleted && (
+          {/* Course Completion Message - gated by quiz if required */}
+          {!nextVideo && isCompleted && (isTeacher || !quizInfo.hasQuiz || !quizInfo.isRequired || quizInfo.passed) && (
             <Box sx={{ mb: 3, textAlign: 'center', p: 3, bgcolor: 'success.light', borderRadius: 2 }}>
               <Typography variant="h6" color="success.dark" sx={{ fontWeight: 'bold', mb: 1 }}>
                 🎉 Congratulations!
@@ -765,8 +859,8 @@ const VideoPlayer = () => {
             </Box>
           </Paper>
 
-          {/* Next Video Section */}
-          {isCompleted && (
+          {/* Next Video Section - gated by quiz if required */}
+          {isCompleted && (isTeacher || !quizInfo.hasQuiz || !quizInfo.isRequired || quizInfo.passed) && (
             <Paper sx={{ p: 2, mb: 2 }}>
               <Typography variant="h6" gutterBottom>🎉 Video Completed!</Typography>
               <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
@@ -775,6 +869,60 @@ const VideoPlayer = () => {
               <Button variant="contained" color="success" startIcon={<PlayIcon />} onClick={() => navigate(`/course/${videoData?.courseId}`)} fullWidth>
                 Continue to Next Video
               </Button>
+            </Paper>
+          )}
+
+          {/* Quiz Section */}
+          {quizInfo.hasQuiz && (
+            <Paper sx={{ p: 2, mb: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6">{quizInfo.quizTitle || 'Quiz'}</Typography>
+                {quizInfo.passed && <Chip label="PASSED" color="success" />}
+              </Box>
+              {!quizInfo.passed && !quizAttempt && (
+                <>
+                  <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+                    {quizInfo.isRequired ? 'This quiz is required to unlock the next video.' : 'Optional quiz.'}
+                  </Typography>
+                  <Button variant="contained" onClick={startQuiz} disabled={quizLoading}>
+                    {quizLoading ? 'Loading...' : 'Start Quiz'}
+                  </Button>
+                </>
+              )}
+              {!quizInfo.passed && quizAttempt && (
+                <>
+                  <Typography variant="subtitle1" sx={{ mb: 1 }}>{quizAttempt.quiz?.title}</Typography>
+                  <Divider sx={{ mb: 2 }} />
+                  {quizAttempt.questions?.map((q, idx) => (
+                    <Box key={q.id} sx={{ mb: 2 }}>
+                      <Typography variant="body1" sx={{ fontWeight: 'bold', mb: 1 }}>
+                        {idx + 1}. {q.text}
+                      </Typography>
+                      {q.imageUrl && (
+                        <Box sx={{ mb: 1 }}>
+                          <img src={q.imageUrl} alt={`Question ${idx + 1}`} style={{ maxWidth: '100%', borderRadius: 6, border: '1px solid #eee' }} />
+                        </Box>
+                      )}
+                      <RadioGroup
+                        value={quizAnswers[q.id] || ''}
+                        onChange={(e) => setQuizAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
+                      >
+                        {q.options?.map(opt => (
+                          <FormControlLabel key={opt.id} value={opt.id} control={<Radio />} label={opt.text} />
+                        ))}
+                      </RadioGroup>
+                    </Box>
+                  ))}
+                  <Button variant="contained" color="primary" onClick={submitQuiz} disabled={quizSubmitting}>
+                    {quizSubmitting ? 'Submitting...' : 'Submit Quiz'}
+                  </Button>
+                  {quizResult && (
+                    <Alert severity={quizResult.passed ? 'success' : 'error'} sx={{ mt: 2 }}>
+                      {quizResult.passed ? `Passed! Score: ${quizResult.scorePct?.toFixed?.(1) || quizResult.scorePct}%` : `Failed. Score: ${quizResult.scorePct?.toFixed?.(1) || quizResult.scorePct}%. Try again.`}
+                    </Alert>
+                  )}
+                </>
+              )}
             </Paper>
           )}
 
