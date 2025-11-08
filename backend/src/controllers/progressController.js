@@ -367,8 +367,7 @@ const getCourseProgress = async (req, res) => {
 // Get student progress for teacher
 const getStudentProgress = async (req, res) => {
   try {
-    const { courseId } = req.params;
-    const { studentId } = req.query;
+    const { studentId, courseId } = req.params;
 
     const progress = await Progress.findAll({
       where: { userId: studentId },
