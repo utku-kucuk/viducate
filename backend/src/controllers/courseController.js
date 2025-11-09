@@ -51,12 +51,6 @@ const getTeacherCourses = async (req, res) => {
           model: Video,
           as: 'videos',
           attributes: ['id', 'title', 'duration', 'order', 'fileUrl', 'videoVariants', 'quality']
-        },
-        {
-          model: User,
-          as: 'students',
-          attributes: ['id', 'firstName', 'lastName', 'email'],
-          through: { attributes: [] }
         }
       ],
       order: [['createdAt', 'DESC']]
