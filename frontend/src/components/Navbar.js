@@ -115,10 +115,10 @@ const Navbar = () => {
         <Button
           onClick={handleDashboardMenuOpen}
           color="inherit"
-          startIcon={<AdminIcon />}
+          startIcon={<DashboardIcon />}
           sx={{ textTransform: 'none' }}
         >
-          {t('nav.adminPanel')}
+            {t('nav.dashboards')}
         </Button>
       );
     } else {
@@ -148,24 +148,30 @@ const Navbar = () => {
               alignItems: 'center',
               textDecoration: 'none',
               color: 'inherit',
-              mr: 3
+              mr: 3,
+              ml: 0
             }}
           >
-            <SchoolIcon sx={{ mr: 1, fontSize: 32 }} />
-            <Typography
-              variant="h6"
+            <Box
+              component="img"
+              src="/viducate-logo.png"
+              alt="Viducate"
               sx={{
-                fontWeight: 700,
-                letterSpacing: '.1rem'
+                height: 28,
+                width: 'auto',
+                mr: 1.2,
+                display: 'block',
+                mt: -1
               }}
-            >
+            />
+            <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: '.06rem' }}>
               {t('nav.brand')}
             </Typography>
           </Box>
 
           {/* Desktop Navigation */}
           {!isMobile && (
-            <Box sx={{ flexGrow: 1, display: 'flex', gap: 2 }}>
+            <Box sx={{ flexGrow: 1, display: 'flex', gap: 2, ml: 1 }}>
               {isAuthenticated && (
                 <>
                   <Button

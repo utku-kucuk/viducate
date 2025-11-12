@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   Box,
   Container,
@@ -18,12 +18,20 @@ import {
   VideoLibrary as VideoIcon,
   CheckCircle as CheckIcon
 } from '@mui/icons-material';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTranslation } from 'react-i18next';
 
 const Home = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
+
+  // If admin lands on home, redirect to admin panel by default
+  useEffect(() => {
+    if (user?.role === 'admin') {
+      navigate('/admin', { replace: true });
+    }
+  }, [user, navigate]);
   const { t } = useTranslation();
 
   const features = [

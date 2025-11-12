@@ -98,7 +98,9 @@ const Login = () => {
         // Role-based redirect after successful login
         let redirectPath = from;
         
-        if (user.role === 'teacher' || user.role === 'admin') {
+        if (user.role === 'admin') {
+          redirectPath = '/admin';
+        } else if (user.role === 'teacher') {
           redirectPath = '/teacher';
         } else if (user.role === 'student') {
           redirectPath = '/dashboard';

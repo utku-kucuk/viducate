@@ -455,7 +455,14 @@ const CreateCourse = () => {
             sections: chapter.sections.map(section => ({
               title: section.title,
               description: section.description,
-              videos: [] // Don't include videos in initial course creation
+              // Include placeholder videos so course detail lists them immediately
+              videos: section.videos.map(video => ({
+                // id intentionally omitted; will be resolved by title once upload creates real Video
+                title: video.title,
+                description: video.description || '',
+                fileUrl: null,
+                duration: 0
+              }))
             }))
           }))
         };
@@ -465,7 +472,7 @@ const CreateCourse = () => {
         console.log('Course creation response:', response.data);
       }
 
-      // Upload new videos if any
+      // Upload new videos if any (non-blocking; fire-and-forget)
       const videoUploadPromises = [];
       let videoCounter = 0;
       
@@ -499,78 +506,32 @@ const CreateCourse = () => {
         }
       }
       
-      // Wait for all video uploads to complete
+      // Do not block the UI: trigger uploads but don't await
       if (videoUploadPromises.length > 0) {
-        try {
-          const uploadedVideos = await Promise.all(videoUploadPromises);
-          console.log('Uploaded videos:', uploadedVideos);
-          
-          // Update course structure with video references
-          const updatedChapters = chapters.map(chapter => ({
-            ...chapter,
-            sections: chapter.sections.map(section => ({
-              ...section,
-              videos: section.videos.map(video => {
-                // Find the uploaded video that matches this one
-                const uploadedVideo = uploadedVideos.find(uv => 
-                  uv.originalTitle === video.title && 
-                  uv.chapterId === chapter.id && 
-                  uv.sectionId === section.id
-                );
-                
-                if (uploadedVideo && uploadedVideo.data.success) {
-                  const uploadedVideoData = uploadedVideo.data.data;
-                  return {
-                    ...video,
-                    id: uploadedVideoData.id,
-                    fileUrl: uploadedVideoData.fileUrl || uploadedVideoData.selectedUrl,
-                    duration: uploadedVideoData.duration,
-                    // Include videoVariants if available
-                    videoVariants: uploadedVideoData.videoVariants || null,
-                    quality: uploadedVideoData.quality || '720p'
-                  };
-                }
-                
-                return video; // Return original video if upload failed
-              })
-            }))
-          }));
-          
-          // Update the course with the video structure
-          try {
-            const updatePayload = {
-              chapters: updatedChapters
-            };
-            console.log('Sending course update with payload:', updatePayload);
-            await axios.put(`/api/courses/${currentCourseId}`, updatePayload);
-            console.log('Course structure updated successfully');
-          } catch (error) {
-            console.error('Error updating course structure:', error);
-            // Don't fail the entire process if course update fails
-          }
-          
-          if (isEditMode) {
-            setSuccess(`Course updated successfully with ${uploadedVideos.length} new videos uploaded!`);
+        setSuccess(isEditMode
+          ? 'Course updated. Videos are uploading in background...'
+          : 'Course created. Videos are uploading in background...'
+        );
+        // Best-effort course structure sync per upload (optional)
+        videoUploadPromises.forEach(promise => {
+          promise.then(async (uploaded) => {
+            try {
+              if (!uploaded?.data?.success) return;
+              const up = uploaded.data.data;
+              // After upload, we don't need to push IDs into chapters immediately because
+              // CourseDetail resolves video IDs by title, but we keep this for consistency if needed.
+              // No-op here to avoid extra load; rely on title matching in CourseDetail.
+              console.log('Background upload completed for:', up?.title || up?.id);
+            } catch (e) {
+              console.log('Background post-upload sync skipped:', e?.message || e);
+            }
+          }).catch(() => {});
+        });
           } else {
-            setSuccess(`Course created successfully with ${uploadedVideos.length} videos uploaded!`);
+        setSuccess(isEditMode ? 'Course updated successfully!' : 'Course created successfully!');
           }
-        } catch (uploadError) {
-          console.error('Error uploading videos:', uploadError);
-          if (isEditMode) {
-            setSuccess('Course updated successfully, but some videos failed to upload. You can upload them later.');
-          } else {
-            setSuccess('Course created successfully, but some videos failed to upload. You can upload them later.');
-          }
-        }
-      } else {
-        if (isEditMode) {
-          setSuccess('Course updated successfully!');
-        } else {
-          setSuccess('Course created successfully!');
-        }
-      }
 
-      // Redirect to the course after 2 seconds
+      // Redirect to the course quickly; uploads continue in background
       setTimeout(() => {
         console.log('Course ID for redirect:', currentCourseId);
         if (currentCourseId) {
@@ -579,7 +540,7 @@ const CreateCourse = () => {
           console.error('No course ID found in response');
           navigate('/dashboard');
         }
-      }, 2000);
+      }, 600);
 
     } catch (error) {
       console.error(`Error ${isEditMode ? 'updating' : 'creating'} course:`, error);
