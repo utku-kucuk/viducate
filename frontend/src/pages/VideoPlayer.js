@@ -91,6 +91,9 @@ const VideoPlayer = () => {
   const [isEditingNotes, setIsEditingNotes] = useState(true);
   const [lastNotesSavedAt, setLastNotesSavedAt] = useState(null);
   const [notesSavedOpen, setNotesSavedOpen] = useState(false);
+  // Processing state
+  const isProcessing = Boolean(videoData?.processingStatus && videoData.processingStatus !== 'completed');
+  const hasMultipleVariants = Array.isArray(videoData?.videoVariants) && (videoData.videoVariants.length > 1);
 
   // Helper function to format time
   const formatTime = (seconds) => {
@@ -596,6 +599,32 @@ const VideoPlayer = () => {
     fetchVideoData();
   }, [videoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // While processing, poll for updated variants every 6s
+  useEffect(() => {
+    if (!isProcessing) return;
+    const id = setInterval(() => {
+      // lightweight refresh for video meta
+      axios.get(`/api/videos/${videoId}`).then(resp => {
+        const vd = resp?.data?.data;
+        if (vd) {
+          setVideoData(vd);
+          const qualities = Array.isArray(vd.availableQualities) && vd.availableQualities.length > 0
+            ? vd.availableQualities
+            : (Array.isArray(vd.videoVariants) ? vd.videoVariants.map(v => v.quality || v).filter(Boolean) : []);
+          setAvailableQualities(qualities);
+          if (!selectedQuality) {
+            setSelectedQuality(vd.currentQuality || (qualities.length > 0 ? qualities[qualities.length - 1] : null));
+          }
+          if (vd.selectedUrl || vd.fileUrl) {
+            setCurrentVideoUrl(vd.selectedUrl || vd.fileUrl);
+          }
+        }
+      }).catch(() => {});
+    }, 6000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isProcessing, videoId]);
+
   // Auto-save notes with debounce
   useEffect(() => {
     if (!autoSaveNotes || !videoData) return;
@@ -701,7 +730,7 @@ const VideoPlayer = () => {
               />
 
               {/* In-player Quality Menu Overlay */}
-              {availableQualities.length > 1 && (
+              {availableQualities.length > 1 && !isProcessing && (
                 <Box sx={{ position: 'absolute', right: 8, top: 8, zIndex: 20, pointerEvents: 'auto' }}>
                   <IconButton 
                     size="small" 
@@ -728,6 +757,11 @@ const VideoPlayer = () => {
                       </MenuItem>
                     ))}
                   </Menu>
+                </Box>
+              )}
+              {isProcessing && (
+                <Box sx={{ position: 'absolute', right: 8, top: 8, zIndex: 20 }}>
+                  <Chip size="small" color="warning" label="Processing..." />
                 </Box>
               )}
 
