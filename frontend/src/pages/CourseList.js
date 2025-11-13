@@ -34,17 +34,44 @@ const CourseList = () => {
   const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [departmentFilter, setDepartmentFilter] = useState('all');
   const [levelFilter, setLevelFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [courses, setCourses] = useState([]);
+  const [categoryOptions, setCategoryOptions] = useState(['all']);
+  const [departmentOptions, setDepartmentOptions] = useState(['all']);
 
   useEffect(() => {
     // Only fetch courses when user is authenticated
     if (isAuthenticated && user) {
+      fetchMeta();
       fetchCourses();
     }
   }, [isAuthenticated, user]);
+
+  const fetchMeta = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (token) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      }
+      const [cats, deps] = await Promise.allSettled([
+        axios.get('/api/meta/categories'),
+        axios.get('/api/meta/departments')
+      ]);
+      if (cats.status === 'fulfilled') {
+        const list = (cats.value?.data?.data || []).map(c => c.name).filter(Boolean);
+        setCategoryOptions(['all', ...Array.from(new Set(list))]);
+      }
+      if (deps.status === 'fulfilled') {
+        const list = (deps.value?.data?.data || []).map(d => d.name).filter(Boolean);
+        setDepartmentOptions(['all', ...Array.from(new Set(list))]);
+      }
+    } catch {
+      // ignore meta failures; filters will be minimal
+    }
+  };
 
   const fetchCourses = async () => {
     try {
@@ -67,16 +94,16 @@ const CourseList = () => {
     }
   };
 
-  const categories = ['all', 'Programming', 'Design', 'Business', 'Marketing'];
   const levels = ['all', 'beginner', 'intermediate', 'advanced'];
 
   const filteredCourses = courses.filter(course => {
     const matchesSearch = course.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          course.description.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = categoryFilter === 'all' || course.category === categoryFilter;
+    const matchesCategory = categoryFilter === 'all' || (course.category || '') === categoryFilter;
+    const matchesDepartment = departmentFilter === 'all' || (course.department || '') === departmentFilter;
     const matchesLevel = levelFilter === 'all' || course.level === levelFilter;
     
-    return matchesSearch && matchesCategory && matchesLevel;
+    return matchesSearch && matchesCategory && matchesDepartment && matchesLevel;
   });
 
   const formatDuration = (seconds) => {
@@ -156,9 +183,25 @@ const CourseList = () => {
                 label={t('courses.category')}
                 onChange={(e) => setCategoryFilter(e.target.value)}
               >
-                {categories.map((category) => (
+                {categoryOptions.map((category) => (
                   <MenuItem key={category} value={category}>
                     {category === 'all' ? t('courses.allCategories') : category}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={12} md={4}>
+            <FormControl fullWidth>
+              <InputLabel>Department</InputLabel>
+              <Select
+                value={departmentFilter}
+                label="Department"
+                onChange={(e) => setDepartmentFilter(e.target.value)}
+              >
+                {departmentOptions.map((dep) => (
+                  <MenuItem key={dep} value={dep}>
+                    {dep === 'all' ? 'All Departments' : dep}
                   </MenuItem>
                 ))}
               </Select>
@@ -220,6 +263,14 @@ const CourseList = () => {
                       color="primary" 
                       variant="outlined"
                     />
+                    {course.department && (
+                      <Chip 
+                        label={course.department}
+                        size="small"
+                        color="info"
+                        variant="outlined"
+                      />
+                    )}
                     <Chip 
                       label={course.level} 
                       size="small" 
@@ -266,11 +317,7 @@ const CourseList = () => {
                   </Box>
                 </Box>
 
-                <Box sx={{ mt: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Typography variant="h6" color="success.main" sx={{ fontWeight: 600 }}>
-                    {t('courses.free')}
-                  </Typography>
-                  
+                <Box sx={{ mt: 'auto', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
                   <Button
                     component={Link}
                     to={`/course/${course.id}`}
