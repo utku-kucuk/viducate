@@ -389,6 +389,12 @@ const Navbar = () => {
                       <Divider />
                     </>
                   )}
+                {isAuthenticated && user?.role === 'student' && (
+                  <MenuItem component={Link} to="/dashboard" onClick={handleMenuClose}>
+                    <DashboardIcon sx={{ mr: 1 }} />
+                    {t('nav.dashboard')}
+                  </MenuItem>
+                )}
                 {isAuthenticated && (
                   <MenuItem component={Link} to="/courses" onClick={handleMenuClose}>
                     <BookIcon sx={{ mr: 1 }} />

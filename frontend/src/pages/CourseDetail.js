@@ -112,7 +112,7 @@ const CourseDetail = () => {
       // Admins should have full teacher-like access only when adminPreview=1
       setIsTeacher((user?.role === 'teacher' && courseResponse.data.data.teacherId === user.id) || (user?.role === 'admin'));
       // Build flattened video order for locking logic
-      const allVideos = [];
+      let allVideos = [];
       if (courseData?.chapters && Array.isArray(courseData.chapters)) {
         courseData.chapters.forEach(chapter => {
           if (chapter.sections && Array.isArray(chapter.sections)) {
@@ -125,6 +125,11 @@ const CourseDetail = () => {
             });
           }
         });
+      }
+      // If chapter videos lack real ids, fall back to server videos list
+      const hasRealIds = allVideos.some(v => v && v.id);
+      if (!hasRealIds && Array.isArray(courseData.videos) && courseData.videos.length > 0) {
+        allVideos = [...courseData.videos];
       }
       // sort by order if available
       allVideos.sort((a, b) => (a.order || 0) - (b.order || 0));
@@ -281,9 +286,15 @@ const CourseDetail = () => {
               </Typography>
               
               <Box display="flex" gap={2} flexWrap="wrap" sx={{ mb: 2 }}>
-                <Chip label={course.category} color="primary" variant="outlined" />
-                <Chip label={course.level} color="secondary" variant="outlined" />
-                <Chip label={t('courseDetail.free')} color="success" />
+                {course.category && (
+                  <Chip label={course.category} color="primary" variant="outlined" />
+                )}
+                {course.department && (
+                  <Chip label={course.department} color="info" variant="outlined" />
+                )}
+                {course.level && (
+                  <Chip label={course.level} color="secondary" variant="outlined" />
+                )}
               </Box>
               
               <Box display="flex" gap={3} sx={{ mb: 2 }}>

@@ -47,6 +47,14 @@ const Dashboard = () => {
       setLoading(true);
       setError(null);
 
+      // Ensure auth header on refresh
+      try {
+        const token = localStorage.getItem('token');
+        if (token) {
+          axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        }
+      } catch {}
+
       // Fetch user's enrolled courses
       const coursesResponse = await axios.get('/api/courses/enrolled');
       const courses = coursesResponse.data.data || [];
@@ -56,6 +64,7 @@ const Dashboard = () => {
       let completedVideos = 0;
       let totalWatchTime = 0;
       let totalProgress = 0;
+      let completedCoursesCount = 0;
 
       // Fetch progress for each course
       for (const course of courses) {
@@ -88,6 +97,9 @@ const Dashboard = () => {
 
           // Update course with progress
           course.progress = courseProgress;
+          if (course.progress >= 100) {
+            completedCoursesCount++;
+          }
         } catch (error) {
           console.error(`Error fetching progress for course ${course.id}:`, error);
           course.progress = 0;
@@ -98,7 +110,7 @@ const Dashboard = () => {
 
       setStats({
         totalCourses: courses.length,
-        completedCourses: 0, // Will be calculated based on course completion logic
+        completedCourses: completedCoursesCount,
         totalVideos,
         completedVideos,
         totalWatchTime: Math.round(totalWatchTime * 10) / 10,
@@ -306,6 +318,11 @@ const Dashboard = () => {
                         value={course.progress} 
                         sx={{ height: 6, borderRadius: 3 }}
                       />
+                      {course.progress >= 100 && (
+                        <Box sx={{ mt: 1 }}>
+                          <Chip size="small" color="success" label={t('courseDetail.completed')} />
+                        </Box>
+                      )}
                     </Box>
                     
                     <Button
