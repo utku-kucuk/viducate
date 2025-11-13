@@ -59,7 +59,10 @@ const CourseDetail = () => {
 
     // Try to match by exact title first
     if (chapterVideo?.title) {
-      const byTitle = course.videos.find(v => v.title === chapterVideo.title);
+      const norm = (s) => String(s || '').trim().toLowerCase();
+      const byTitle = course.videos.find(v => v.title === chapterVideo.title)
+        || course.videos.find(v => norm(v.title) === norm(chapterVideo.title))
+        || course.videos.find(v => norm(v.title).includes(norm(chapterVideo.title)) || norm(chapterVideo.title).includes(norm(v.title)));
       if (byTitle) return byTitle.id;
     }
 

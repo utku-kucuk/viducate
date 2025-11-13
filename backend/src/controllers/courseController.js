@@ -394,6 +394,23 @@ const updateCourse = async (req, res) => {
       if (course.adminDisabled && desired === true) {
         return res.status(403).json({ success: false, message: 'Course is disabled by admin and cannot be published.' });
       }
+      // Enforce: All course videos must finish processing before publishing
+      if (desired === true) {
+        try {
+          const vids = await Video.findAll({ where: { courseId: id } });
+          const hasVideos = vids.length > 0;
+          const allCompleted = !hasVideos || vids.every(v => v.processingStatus === 'completed');
+          if (!allCompleted) {
+            return res.status(400).json({
+              success: false,
+              message: 'Course cannot be published until all videos finish processing.'
+            });
+          }
+        } catch (e) {
+          console.error('Failed to validate video processing before publish:', e);
+          return res.status(500).json({ success: false, message: 'Failed to validate course videos for publishing.' });
+        }
+      }
       updateData.isPublished = desired;
     }
 

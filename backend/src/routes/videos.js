@@ -292,24 +292,7 @@ router.post('/complete-upload', auth, requireTeacher, async (req, res) => {
           processingStatus: 'completed'
         });
 
-        // If linked to a course, maybe publish
-        if (video.courseId) {
-          try {
-            const course = await Course.findByPk(video.courseId);
-            if (course) {
-              const allVideos = await Video.findAll({ where: { courseId: course.id } });
-              const hasVideos = allVideos.length > 0;
-              const allCompleted = hasVideos && allVideos.every(v => v.processingStatus === 'completed');
-              if (allCompleted && !course.isPublished) {
-                await course.update({ isPublished: true });
-                // propagate publish to videos
-                await Video.update({ isPublished: true }, { where: { courseId: course.id } });
-              }
-            }
-          } catch (e) {
-            logger.warn('Publish check failed:', e);
-          }
-        }
+        // Do not auto-publish course here; publishing is an explicit teacher/admin action
       } catch (e) {
         logger.error('Background finalize failed:', e);
         try { await video.update({ processingStatus: 'failed' }); } catch {}
