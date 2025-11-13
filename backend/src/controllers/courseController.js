@@ -296,7 +296,7 @@ const createCourse = async (req, res) => {
       });
     }
 
-    const { title, description, category, department, level, chapters, thumbnail, videoIds, isPublished } = req.body;
+    const { title, description, category, department, level, chapters, thumbnail, videoIds /*, isPublished*/ } = req.body;
 
     // Create course first
     // Some existing DBs may still enforce NOT NULL on category; use empty string fallback
@@ -312,7 +312,8 @@ const createCourse = async (req, res) => {
       chapters: chapters || [],
       thumbnail: thumbnail || null,
       teacherId: req.user.id,
-      isPublished: Boolean(isPublished) || false
+      // Always keep unpublished initially; can be published after videos complete processing
+      isPublished: false
     });
     // If client provided pre-uploaded video ids, attach them
     if (Array.isArray(videoIds) && videoIds.length > 0) {
@@ -323,13 +324,7 @@ const createCourse = async (req, res) => {
         );
 
         // After linking, check publish condition: all videos completed
-        const linkedVideos = await Video.findAll({ where: { courseId: course.id } });
-        const hasVideos = linkedVideos.length > 0;
-        const allCompleted = hasVideos && linkedVideos.every(v => v.processingStatus === 'completed');
-        if (allCompleted) {
-          await course.update({ isPublished: true });
-          await Video.update({ isPublished: true }, { where: { courseId: course.id } });
-        }
+        // Do not auto-publish here; publishing will be controlled explicitly after processing
       } catch (linkErr) {
         console.error('Failed to link videos to course:', linkErr);
       }

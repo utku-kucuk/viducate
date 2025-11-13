@@ -193,15 +193,15 @@ const CourseList = () => {
           </Grid>
           <Grid item xs={12} md={4}>
             <FormControl fullWidth>
-              <InputLabel>Department</InputLabel>
+              <InputLabel>{t('courses.department')}</InputLabel>
               <Select
                 value={departmentFilter}
-                label="Department"
+                label={t('courses.department')}
                 onChange={(e) => setDepartmentFilter(e.target.value)}
               >
                 {departmentOptions.map((dep) => (
                   <MenuItem key={dep} value={dep}>
-                    {dep === 'all' ? 'All Departments' : dep}
+                    {dep === 'all' ? t('courses.allDepartments') : dep}
                   </MenuItem>
                 ))}
               </Select>
