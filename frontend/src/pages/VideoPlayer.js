@@ -51,6 +51,10 @@ const VideoPlayer = () => {
   const [qualityMenuAnchor, setQualityMenuAnchor] = useState(null);
   const isQualityMenuOpen = Boolean(qualityMenuAnchor);
   
+  // Access gating
+  const [accessAllowed, setAccessAllowed] = useState(true);
+  const [gatingChecked, setGatingChecked] = useState(false);
+  
   // Player states
   const [player, setPlayer] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -200,9 +204,10 @@ const VideoPlayer = () => {
       setCourseData(course);
       // Ensure readonly when in admin preview mode
       if (adminPreview) setReadonlyMode(true);
-      // Determine readonly mode: only enrolled users can persist progress
+      // Determine readonly mode: enrolled users or course owners can persist progress
       const enrolled = Boolean(course?.isEnrolled);
-      setReadonlyMode(!enrolled);
+      const isOwner = course && user && (course.teacherId === user.id);
+      setReadonlyMode(!(enrolled || isOwner));
       const allVideos = [];
       if (course.chapters && Array.isArray(course.chapters)) {
         course.chapters.forEach(chapter => {
@@ -227,6 +232,76 @@ const VideoPlayer = () => {
         setNextVideo(allVideos[currentIndex + 1]);
       } else {
         setNextVideo(null);
+      }
+
+      // Strict sequential gating and enrollment/ownership requirement
+      if (!adminPreview && !(enrolled || isOwner)) {
+        // Not enrolled: block access
+        setAccessAllowed(false);
+        setGatingChecked(true);
+      } else if (!adminPreview && (enrolled || isOwner)) {
+        try {
+          // Fetch progress for the entire course once
+          const pgResp = await axios.get(`/api/progress/course/${courseId}`);
+          const list = pgResp?.data?.progress || pgResp?.data?.data || [];
+          const progressMap = {};
+          (Array.isArray(list) ? list : []).forEach(p => { if (p?.videoId) progressMap[p.videoId] = p; });
+          // Fetch quiz info for all videos (parallel)
+          const quizPromises = allVideos.map(v => 
+            axios.get(`/api/quizzes/video/${v.id}`)
+              .then(r => ({ videoId: v.id, info: r.data || { hasQuiz: false } }))
+              .catch(() => ({ videoId: v.id, info: { hasQuiz: false } }))
+          );
+          const quizResults = await Promise.all(quizPromises);
+          const quizMap = {};
+          quizResults.forEach(r => { quizMap[r.videoId] = r.info; });
+          
+          // Build ordered items: for each video, then its quiz if assigned
+          const items = [];
+          allVideos.forEach(v => {
+            items.push({ kind: 'video', id: v.id });
+            const q = quizMap[v.id] || {};
+            if (q.hasQuiz) {
+              items.push({
+                kind: 'quiz',
+                videoId: v.id,
+                isRequired: !!q.isRequired,
+                unlockNextOnPass: q.unlockNextOnPass !== undefined ? !!q.unlockNextOnPass : true,
+                passed: !!q.passed
+              });
+            }
+          });
+          
+          const isItemCompleted = (item) => {
+            if (item.kind === 'video') {
+              const p = progressMap[item.id];
+              return Boolean(p && p.isCompleted === true);
+            }
+            if (item.kind === 'quiz') {
+              const blocksNext = item.isRequired || item.unlockNextOnPass;
+              return blocksNext ? !!item.passed : true;
+            }
+            return false;
+          };
+          
+          let firstIncomplete = items.length;
+          for (let i = 0; i < items.length; i++) {
+            if (!isItemCompleted(items[i])) { firstIncomplete = i; break; }
+          }
+          const myIndex = items.findIndex(it => it.kind === 'video' && it.id === videoId);
+          const allowed = myIndex === -1 ? true : (myIndex <= firstIncomplete);
+          setAccessAllowed(allowed);
+        } catch (e) {
+          // If gating check fails, be conservative and allow, but log
+          console.error('Gating check failed:', e);
+          setAccessAllowed(true);
+        } finally {
+          setGatingChecked(true);
+        }
+      } else {
+        // Not applicable (admin preview or not enrolled)
+        setAccessAllowed(true);
+        setGatingChecked(true);
       }
     } catch (err) {
       console.error('Error fetching course data:', err);
@@ -651,6 +726,20 @@ const VideoPlayer = () => {
         <Button onClick={() => navigate(-1)} sx={{ mt: 2 }}>
           {t('videoPlayer.goBack')}
         </Button>
+      </Container>
+    );
+  }
+
+  // If gating disallows access, show message instead of the player
+  if (gatingChecked && !accessAllowed) {
+    return (
+      <Container maxWidth="lg" sx={{ mt: 4 }}>
+        <Alert severity="warning">{t('courseSidebar.lockedMessage')}</Alert>
+        {videoData?.courseId && (
+          <Button variant="contained" sx={{ mt: 2 }} onClick={() => navigate(`/course/${videoData.courseId}${adminPreview ? '?adminPreview=1' : ''}`)}>
+            {t('videoPlayer.backToCourse')}
+          </Button>
+        )}
       </Container>
     );
   }

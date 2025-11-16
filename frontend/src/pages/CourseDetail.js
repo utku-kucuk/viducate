@@ -23,7 +23,7 @@ import {
   CheckCircle as CheckIcon,
   ExpandMore as ExpandMoreIcon
 } from '@mui/icons-material';
-import { Link, useParams, useLocation } from 'react-router-dom';
+import { Link, useParams, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
@@ -33,6 +33,7 @@ const CourseDetail = () => {
   const { user } = useAuth();
   const location = useLocation();
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const adminPreviewFlag = new URLSearchParams(location.search).get('adminPreview') === '1';
   
   const [course, setCourse] = useState(null);
@@ -95,31 +96,26 @@ const CourseDetail = () => {
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       }
       
-      // Adminlar için her zaman adminPreview ile tam içerik getir
-      const useAdminPreview = (user?.role === 'admin') || adminPreviewFlag;
+      // Admin preview ONLY when adminPreview flag is explicitly provided
+      const useAdminPreview = adminPreviewFlag === true;
       const apiUrl = useAdminPreview ? `/api/courses/${courseId}?adminPreview=1` : `/api/courses/${courseId}`;
-      const [courseResponse, progressResponse, enrolledResp] = await Promise.all([
+      const [courseResponse, progressResponse] = await Promise.all([
         axios.get(apiUrl),
-        user?.role === 'student' ? axios.get(`/api/progress/course/${courseId}`) : Promise.resolve({ data: { data: [] } }),
-        user?.role === 'student' ? axios.get('/api/courses/enrolled') : Promise.resolve({ data: { data: [] } })
+        user?.role === 'student' ? axios.get(`/api/progress/course/${courseId}`) : Promise.resolve({ data: { data: [] } })
       ]);
 
       const courseData = courseResponse.data.data;
       setCourse(courseData);
-      // Derive enrollment robustly: prefer server field; fallback to enrolled list
+      // Enrollment from server response only (single source of truth)
       const serverIsEnrolled = Boolean(courseResponse.data.data.isEnrolled);
-      let clientIsEnrolled = serverIsEnrolled;
-      if (!serverIsEnrolled && enrolledResp?.data?.data) {
-        clientIsEnrolled = Array.isArray(enrolledResp.data.data) && enrolledResp.data.data.some(c => c.id === courseId);
-      }
-      setIsEnrolled(clientIsEnrolled);
+      setIsEnrolled(serverIsEnrolled);
       // Role flags
       const ownerFlag = courseResponse.data.data.teacherId === user?.id;
       const adminFlag = user?.role === 'admin';
       setIsOwner(ownerFlag);
       setIsAdmin(adminFlag);
-      // Admins/owners have teacher-like access to bypass locks
-      setIsTeacher((user?.role === 'teacher' && ownerFlag) || adminFlag);
+      // Only the course owner (teacher or admin who created it) OR explicit adminPreview can bypass locks
+      setIsTeacher(Boolean(ownerFlag || adminPreviewFlag));
       // Build flattened video order for locking logic
       let allVideos = [];
       if (courseData?.chapters && Array.isArray(courseData.chapters)) {
@@ -497,23 +493,37 @@ const CourseDetail = () => {
                                             )}
                                           </Box>
                                           
-                                          <Button
-                                            component={Link}
-                                            to={(() => {
-                                              const isFile = (video?.type === 'file') || /(\.pdf|\.pptx?|\/uploads\/files\/)/i.test(String(video?.fileUrl || ''));
-                                              if (!resolvedVideoId) return '#';
-                                              const base = isFile ? '/file/' : '/video/';
-                                              const suffix = (user?.role === 'admin' || adminPreviewFlag) ? '?adminPreview=1' : '';
-                                              return `${base}${resolvedVideoId}${suffix}`;
-                                            })()}
-                                            variant="contained"
-                                            size="small"
-                                            startIcon={<PlayIcon />}
-                                            disabled={!resolvedVideoId || (!isTeacher && (!isEnrolled || !isVideoUnlocked(resolvedVideoId)))}
-                                            title={!isTeacher && !isVideoUnlocked(resolvedVideoId) ? t('courseDetail.unlockPrev') : ''}
-                                          >
-                                            {isWatched ? t('courseDetail.continue') : t('courseDetail.start')}
-                                          </Button>
+                                          {(() => {
+                                            const isFile = (video?.type === 'file') || /(\.pdf|\.pptx?|\/uploads\/files\/)/i.test(String(video?.fileUrl || ''));
+                                            const base = isFile ? '/file/' : '/video/';
+                                            const suffix = adminPreviewFlag ? '?adminPreview=1' : '';
+                                            const targetHref = resolvedVideoId ? `${base}${resolvedVideoId}${suffix}` : '#';
+                                            // Lock all items when not enrolled (unless teacher/admin)
+                                            const baseLocked = !isTeacher && !isEnrolled;
+                                            const sequentialLocked = !isTeacher && isEnrolled && !isVideoUnlocked(resolvedVideoId);
+                                            const isLocked = !resolvedVideoId || baseLocked || sequentialLocked;
+                                            return (
+                                              <Button
+                                                variant="contained"
+                                                size="small"
+                                                startIcon={<PlayIcon />}
+                                                disabled={isLocked}
+                                                title={isLocked ? (baseLocked ? t('courseDetail.enrollNow') : t('courseDetail.unlockPrev')) : ''}
+                                                onClick={() => { if (!isLocked) navigate(targetHref); }}
+                                              >
+                                                {isWatched ? t('courseDetail.continue') : t('courseDetail.start')}
+                                              </Button>
+                                            );
+                                          })()}
+                                          {/* Button end */}
+                                          {/* 
+                                            Note: Avoid using component={Link} for disabled buttons. 
+                                            When Button renders as Link, disabled state does not reliably prevent navigation.
+                                          */}
+                                          {/* */}
+                                          {/* */}
+                                          {/* */}
+                                          {/* */}
                                         </ListItem>
                                         
                                         {quizInfo.hasQuiz && (
@@ -531,16 +541,26 @@ const CourseDetail = () => {
                                                   {quizInfo.passed && <Chip label={t('courseDetail.passed')} size="small" color="success" />}
                                                 </Box>
                                               </Box>
-                                              <Button
-                                                component={Link}
-                                                to={resolvedVideoId && quizInfo?.quizId ? `/quiz/${quizInfo.quizId}?videoId=${resolvedVideoId}${(user?.role === 'admin' || adminPreviewFlag) ? '&adminPreview=1' : ''}` : '#'}
-                                                variant="outlined"
-                                                size="small"
-                                                startIcon={<PlayIcon />}
-                                              disabled={!resolvedVideoId || !quizInfo?.quizId || (!isTeacher && (!isEnrolled || !isVideoUnlocked(resolvedVideoId))) || (!isTeacher && !(progress?.isCompleted))}
-                                              >
-                                                {quizInfo.passed ? t('courseDetail.reviewQuiz') : t('courseDetail.startQuiz')}
-                                              </Button>
+                                              {(() => {
+                                                const quizHref = resolvedVideoId && quizInfo?.quizId 
+                                                  ? `/quiz/${quizInfo.quizId}?videoId=${resolvedVideoId}${adminPreviewFlag ? '&adminPreview=1' : ''}` 
+                                                  : '#';
+                                                const baseLocked = !isTeacher && !isEnrolled;
+                                                const seqLocked = !isTeacher && isEnrolled && !isVideoUnlocked(resolvedVideoId);
+                                                const quizLocked = !resolvedVideoId || !quizInfo?.quizId || baseLocked || seqLocked || (!isTeacher && !(progress?.isCompleted));
+                                                return (
+                                                  <Button
+                                                    variant="outlined"
+                                                    size="small"
+                                                    startIcon={<PlayIcon />}
+                                                    disabled={quizLocked}
+                                                    title={quizLocked ? (baseLocked ? t('courseDetail.enrollNow') : t('courseDetail.completePrevFirst')) : ''}
+                                                    onClick={() => { if (!quizLocked) navigate(quizHref); }}
+                                                  >
+                                                    {quizInfo.passed ? t('courseDetail.reviewQuiz') : t('courseDetail.startQuiz')}
+                                                  </Button>
+                                                );
+                                              })()}
                                             </ListItem>
                                           </List>
                                         )}
@@ -645,16 +665,21 @@ const CourseDetail = () => {
                           )}
                         </Box>
                         
-                        <Button
-                          component={Link}
-                          to={`/video/${video.id}`}
-                          variant="contained"
-                          size="small"
-                          startIcon={<PlayIcon />}
-                          disabled={!isEnrolled && !isTeacher}
-                        >
-                          {isWatched ? t('courseDetail.continue') : t('courseDetail.start')}
-                        </Button>
+                        {(() => {
+                          const locked = (!isEnrolled && !isTeacher) ? true : false;
+                          const href = `/video/${video.id}`;
+                          return (
+                            <Button
+                              variant="contained"
+                              size="small"
+                              startIcon={<PlayIcon />}
+                              disabled={locked}
+                              onClick={() => { if (!locked) navigate(href); }}
+                            >
+                              {isWatched ? t('courseDetail.continue') : t('courseDetail.start')}
+                            </Button>
+                          );
+                        })()}
                       </ListItem>
                       
                       {index < course.videos.length - 1 && <Divider />}

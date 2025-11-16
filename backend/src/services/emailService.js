@@ -13,27 +13,35 @@ if (process.env.RESEND_API_KEY && process.env.RESEND_API_KEY !== 're_your_resend
   console.warn('⚠️  RESEND_API_KEY not configured. Email sending will be disabled.');
 }
 
-// Generate simple password based on email or name
-// Format: lowercase name/email prefix + "123"
-const generateSimplePassword = (email, firstName, lastName) => {
-  // Use firstName if available, otherwise use email prefix
-  let base = '';
+// Generate a strong random password
+// Requirements: length >= 8, includes upper, lower, digit, symbol
+const generateStrongPassword = (length = 8) => {
+  const crypto = require('crypto');
+  const lowers = 'abcdefghijklmnopqrstuvwxyz';
+  const uppers = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const digits = '0123456789';
+  const symbols = '!@#$%^&*()-_=+[]{};:,.<>?';
+  const all = lowers + uppers + digits + symbols;
+  const pick = (charset) => charset[crypto.randomInt(0, charset.length)];
   
-  if (firstName && firstName.trim()) {
-    // Use first name, convert to lowercase, remove special chars and spaces
-    base = firstName.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-  } else if (email) {
-    // Use email prefix (before @)
-    base = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+  const ensure = [
+    pick(lowers),
+    pick(uppers),
+    pick(digits),
+    pick(symbols)
+  ];
+  
+  const remaining = [];
+  for (let i = 0; i < Math.max(8, length) - ensure.length; i++) {
+    remaining.push(pick(all));
   }
-  
-  // If base is empty or too short, use a default
-  if (!base || base.length < 2) {
-    base = 'user';
+  const chars = ensure.concat(remaining);
+  // Shuffle
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = crypto.randomInt(0, i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
   }
-  
-  // Add "123" to make it simple
-  return base + '123';
+  return chars.join('');
 };
 
 // HTML Email Template for credentials
@@ -248,7 +256,7 @@ const sendBulkCredentialsEmails = async (users) => {
 };
 
 module.exports = {
-  generateSimplePassword,
+  generateStrongPassword,
   sendCredentialsEmail,
   sendBulkCredentialsEmails,
 };

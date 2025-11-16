@@ -1,7 +1,7 @@
 const { User, Course, Video, Progress, UserCourse } = require('../models');
 const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
-const { generateSimplePassword, sendCredentialsEmail, sendBulkCredentialsEmails } = require('../services/emailService');
+const { generateStrongPassword, sendCredentialsEmail, sendBulkCredentialsEmails } = require('../services/emailService');
 const { parse } = require('csv-parse/sync');
 
 // Get platform statistics
@@ -455,8 +455,8 @@ const createUser = async (req, res) => {
       });
     }
 
-    // Generate simple password based on user's name/email
-    const tempPassword = generateSimplePassword(email, firstName, lastName);
+    // Generate strong unique temporary password (8 chars)
+    const tempPassword = generateStrongPassword(8);
 
     // Create user with password change required flag
     const user = await User.create({
@@ -587,8 +587,8 @@ const bulkCreateUsers = async (req, res) => {
           continue;
         }
 
-        // Generate simple password based on user's name/email
-        const tempPassword = generateSimplePassword(email, firstName, lastName);
+        // Generate strong unique temporary password (8 chars)
+        const tempPassword = generateStrongPassword(8);
 
         // Create user
         const user = await User.create({

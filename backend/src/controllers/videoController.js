@@ -137,7 +137,7 @@ const getVideoById = async (req, res) => {
       });
     }
 
-    // Access control: Block access to unpublished video/course unless teacher/admin/enrolled
+    // Access control: Require enrollment for students; teachers/admins bypass.
     try {
       const isTeacher = (video.teacherId === userId) || (video.course && video.course.teacherId === userId);
       const isAdmin = req.user && req.user.role === 'admin';
@@ -149,6 +149,12 @@ const getVideoById = async (req, res) => {
         isEnrolled = !!enrollment;
       }
 
+      // Rule 1: If user is not teacher/admin and not enrolled, deny access regardless of publish state
+      if (!(isTeacher || isAdmin || isEnrolled)) {
+        return res.status(403).json({ success: false, message: 'Enrollment required to access this content' });
+      }
+
+      // Rule 2: For non-teacher/admin/enrolled users, unpublished content is hidden
       if ((!videoPublished || !coursePublished) && !(isTeacher || isAdmin || isEnrolled)) {
         return res.status(404).json({ success: false, message: 'Video not found' });
       }
