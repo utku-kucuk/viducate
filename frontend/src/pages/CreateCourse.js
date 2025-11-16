@@ -57,6 +57,7 @@ const CreateCourse = () => {
   });
   const [categories, setCategories] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [existingVideos, setExistingVideos] = useState([]);
   const [chapters, setChapters] = useState([
     {
       id: 1,
@@ -110,6 +111,9 @@ const CreateCourse = () => {
             setCoverPhotoPreview(course.thumbnail);
           }
           
+          // Save existing real videos for validation/matching
+          setExistingVideos(Array.isArray(course.videos) ? course.videos : []);
+          
           // Populate chapters if they exist
           if (course.chapters && Array.isArray(course.chapters)) {
             // Ensure all videos have proper structure
@@ -119,6 +123,7 @@ const CreateCourse = () => {
                 ...section,
                 videos: (section.videos || []).map(video => ({
                   ...video,
+                  localId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
                   file: null, // Reset file to null for existing videos
                   fileUrl: video.fileUrl || null,
                   duration: video.duration || 0
@@ -163,6 +168,30 @@ const CreateCourse = () => {
       ...prev,
       [field]: value
     }));
+  };
+
+  const addFileItem = (chapterId, sectionId) => {
+    const newItem = {
+      id: Date.now(),
+      localId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      title: 'New File',
+      description: 'File description',
+      file: null,
+      type: 'file'
+    };
+    
+    setChapters(chapters.map(chapter => 
+      chapter.id === chapterId 
+        ? {
+            ...chapter,
+            sections: chapter.sections.map(section => 
+              section.id === sectionId 
+                ? { ...section, videos: [...section.videos, newItem] }
+                : section
+            )
+          }
+        : chapter
+    ));
   };
 
   const handleCoverPhotoChange = (event) => {
@@ -270,9 +299,11 @@ const CreateCourse = () => {
   const addVideo = (chapterId, sectionId) => {
     const newVideo = {
       id: Date.now(),
+      localId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       title: 'New Video',
       description: 'Video description',
-      file: null
+      file: null,
+      type: 'video'
     };
     
     setChapters(chapters.map(chapter => 
@@ -313,6 +344,16 @@ const CreateCourse = () => {
 
   const handleVideoFileChange = (chapterId, sectionId, videoId, file) => {
     if (file) {
+      // Validate PDF only for file items
+      const section = chapters.find(c => c.id === chapterId)?.sections.find(s => s.id === sectionId);
+      const item = section?.videos.find(v => v.id === videoId);
+      if (item?.type === 'file') {
+        const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+        if (!isPdf) {
+          setError(t('createCourse.onlyPdfAllowed', 'Only PDF files are allowed'));
+          return;
+        }
+      }
       console.log('File selected:', file.name, 'for video:', videoId);
       // Update both file and title in a single state update
       setChapters(chapters.map(chapter => 
@@ -374,7 +415,7 @@ const CreateCourse = () => {
       return;
     }
 
-    // Validate sections in chapters and ensure each new video has a file selected
+    // Validate sections in chapters and ensure each new content has a file selected
     for (let chapter of chapters) {
       if (chapter.sections.length === 0) {
         setError(`Chapter "${chapter.title}" must have at least one section`);
@@ -383,8 +424,16 @@ const CreateCourse = () => {
       for (let section of chapter.sections) {
         for (let video of section.videos) {
           if (!video.fileUrl && !video.file) {
-            setError(`Video "${video.title}" in Section "${section.title}" must have a video file`);
+            // Allow if matches an already uploaded real video in the course by id or title
+            const norm = (s) => String(s || '').trim().toLowerCase();
+            const matched = existingVideos.some(v =>
+              (video.id && String(v.id) === String(video.id)) ||
+              (video.title && norm(v.title) === norm(video.title))
+            );
+            if (!matched) {
+              setError(`${video.type === 'file' ? 'File' : 'Video'} "${video.title}" in Section "${section.title}" must have a ${video.type === 'file' ? 'file (PDF)' : 'video file'}`);
             return;
+            }
           }
         }
       }
@@ -428,6 +477,7 @@ const CreateCourse = () => {
                 id: video.id,
                 title: video.title,
                 description: video.description,
+                type: video.type || 'video',
                 fileUrl: video.fileUrl,
                 duration: video.duration
               }))
@@ -460,6 +510,7 @@ const CreateCourse = () => {
                 // id intentionally omitted; will be resolved by title once upload creates real Video
                 title: video.title,
                 description: video.description || '',
+                type: video.type || 'video',
                 fileUrl: null,
                 duration: 0
               }))
@@ -472,21 +523,62 @@ const CreateCourse = () => {
         console.log('Course creation response:', response.data);
       }
 
-      // Upload new videos if any (non-blocking; fire-and-forget)
-      const videoUploadPromises = [];
-      let videoCounter = 0;
+      // If publish toggle is on, attempt to publish (server will validate readiness)
+      if (formData.isPublished && currentCourseId) {
+        try {
+          const token = localStorage.getItem('token');
+          if (token) {
+            axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+          }
+          await axios.put(`/api/courses/${currentCourseId}`, { isPublished: true });
+          setSuccess('Course published successfully!');
+        } catch (e) {
+          // If processing not finished, inform user it will remain draft until ready
+          const msg = e?.response?.data?.message || '';
+          if (e?.response?.status === 400 && /processing|finish processing/i.test(msg)) {
+            setSuccess('Course created as draft. Videos are still processing; please publish after processing completes.');
+          } else {
+            // Generic notice
+            setSuccess('Course created. You can publish it from the Teacher Dashboard.');
+          }
+        }
+      }
+
+      // Upload new content (videos/files) if any (non-blocking; fire-and-forget)
+      const contentUploadPromises = [];
+      let contentCounter = 0;
       
       for (const chapter of chapters) {
         for (const section of chapter.sections) {
           for (const video of section.videos) {
-            // Only upload videos that have files (new videos)
+            // Only upload items that have files (new content)
             if (video.file && !video.fileUrl) {
+              if (video.type === 'file') {
+                const formData = new FormData();
+                formData.append('file', video.file);
+                formData.append('title', video.title);
+                formData.append('description', video.description || '');
+                formData.append('courseId', currentCourseId);
+                formData.append('order', contentCounter++);
+                const uploadPromise = axios.post('/api/files/upload', formData, {
+                  headers: {
+                    'Content-Type': 'multipart/form-data',
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                  }
+                }).then(response => ({
+                  ...response,
+                  originalTitle: video.title,
+                  chapterId: chapter.id,
+                  sectionId: section.id
+                }));
+                contentUploadPromises.push(uploadPromise);
+              } else {
               const formData = new FormData();
               formData.append('video', video.file);
               formData.append('title', video.title);
               formData.append('description', video.description || '');
               formData.append('courseId', currentCourseId);
-              formData.append('order', videoCounter++);
+                formData.append('order', contentCounter++);
               
               const uploadPromise = axios.post('/api/videos/upload', formData, {
                 headers: {
@@ -500,20 +592,21 @@ const CreateCourse = () => {
                 sectionId: section.id
               }));
               
-              videoUploadPromises.push(uploadPromise);
+                contentUploadPromises.push(uploadPromise);
+              }
             }
           }
         }
       }
       
       // Do not block the UI: trigger uploads but don't await
-      if (videoUploadPromises.length > 0) {
+      if (contentUploadPromises.length > 0) {
         setSuccess(isEditMode
-          ? 'Course updated. Videos are uploading in background...'
-          : 'Course created. Videos are uploading in background...'
+          ? 'Course updated. Content is uploading in background...'
+          : 'Course created. Content is uploading in background...'
         );
         // Best-effort course structure sync per upload (optional)
-        videoUploadPromises.forEach(promise => {
+        contentUploadPromises.forEach(promise => {
           promise.then(async (uploaded) => {
             try {
               if (!uploaded?.data?.success) return;
@@ -535,7 +628,8 @@ const CreateCourse = () => {
       setTimeout(() => {
         console.log('Course ID for redirect:', currentCourseId);
         if (currentCourseId) {
-          navigate(`/course/${currentCourseId}`);
+          // Hint CourseDetail that the current user is the owner so UI never shows "Enroll" briefly
+          navigate(`/course/${currentCourseId}`, { state: { ownerJustCreated: true } });
         } else {
           console.error('No course ID found in response');
           navigate('/dashboard');
@@ -818,8 +912,9 @@ const CreateCourse = () => {
                           <Box sx={{ mb: 2 }}>
                             <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
                               <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-                              {t('createCourse.videosInSection', 'Videos in this Section')}
+                                {t('createCourse.contentInSection', 'Content in this Section')}
                               </Typography>
+                              <Box sx={{ display: 'flex', gap: 1 }}>
                               <Button
                                 size="small"
                                 variant="outlined"
@@ -828,20 +923,29 @@ const CreateCourse = () => {
                               >
                               {t('createCourse.addVideo', 'Add Video')}
                               </Button>
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  startIcon={<AddIcon />}
+                                  onClick={() => addFileItem(chapter.id, section.id)}
+                                >
+                                  {t('createCourse.addFile', 'Add File')}
+                              </Button>
+                              </Box>
                             </Box>
                             
                             {section.videos.map((video, videoIndex) => (
-                              <Card key={video.id} variant="outlined" sx={{ mb: 1 }}>
+                              <Card key={`${video.id || video.localId || video.title || 'item'}-${videoIndex}`} variant="outlined" sx={{ mb: 1 }}>
                                 <CardContent>
                                   <Grid container spacing={2} alignItems="center">
                                     <Grid item xs={12} sm={4}>
                                       <TextField
                                         fullWidth
                                         size="small"
-                                        label={t('createCourse.videoTitle', 'Video Title')}
+                                        label={video.type === 'file' ? t('createCourse.fileTitle', 'File Title') : t('createCourse.videoTitle', 'Video Title')}
                                         value={video.title}
                                         onChange={(e) => updateVideo(chapter.id, section.id, video.id, 'title', e.target.value)}
-                                        placeholder={t('createCourse.videoTitlePh', 'Video title')}
+                                        placeholder={video.type === 'file' ? t('createCourse.fileTitlePh', 'File title') : t('createCourse.videoTitlePh', 'Video title')}
                                       />
                                     </Grid>
                                     <Grid item xs={12} sm={4}>
@@ -852,11 +956,13 @@ const CreateCourse = () => {
                                         startIcon={<UploadIcon />}
                                         fullWidth
                                       >
-                                        {video.file && video.file.name ? video.file.name.substring(0, 25) + '...' : t('createCourse.selectVideo', 'Select Video')}
+                                        {video.file && video.file.name
+                                          ? video.file.name.substring(0, 25) + '...'
+                                          : (video.type === 'file' ? t('createCourse.selectFile', 'Select PDF File') : t('createCourse.selectVideo', 'Select Video'))}
                                         <input
                                           type="file"
                                           hidden
-                                          accept="video/*"
+                                          accept={video.type === 'file' ? 'application/pdf,.pdf' : 'video/*'}
                                           onChange={(e) => handleVideoFileChange(chapter.id, section.id, video.id, e.target.files[0])}
                                         />
                                       </Button>
@@ -880,10 +986,10 @@ const CreateCourse = () => {
                                       <TextField
                                         fullWidth
                                         size="small"
-                                        label={t('createCourse.videoDesc', 'Video Description')}
+                                        label={video.type === 'file' ? t('createCourse.fileDesc', 'File Description') : t('createCourse.videoDesc', 'Video Description')}
                                         value={video.description}
                                         onChange={(e) => updateVideo(chapter.id, section.id, video.id, 'description', e.target.value)}
-                                        placeholder={t('createCourse.videoDescPh', 'Brief description of this video')}
+                                        placeholder={video.type === 'file' ? t('createCourse.fileDescPh', 'Brief description of this file') : t('createCourse.videoDescPh', 'Brief description of this video')}
                                       />
                                     </Box>
                                   )}

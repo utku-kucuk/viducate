@@ -187,7 +187,8 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey, 
       onVideoSelect({ ...video, id: realId });
     } else {
       const realId = resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id;
-      navigate(`/video/${realId}`);
+      const isFile = (video?.type === 'file') || /(\.pdf|\.pptx?|\/uploads\/files\/)/i.test(String(video?.fileUrl || ''));
+      navigate(isFile ? `/file/${realId}` : `/video/${realId}`);
     }
   };
 
@@ -211,48 +212,80 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey, 
     return info.passed ? 'completed' : 'pending';
   };
 
-  // Flatten course videos in UI order
-  const getAllVideosInOrder = () => {
-    const list = [];
-    if (!courseData?.chapters) return list;
+  // Build ordered content items (video/file and their quiz) and compute gating based on strict sequence
+  const getOrderedItems = () => {
+    const items = [];
+    if (!courseData?.chapters) return items;
     courseData.chapters.forEach((chapter, ci) => {
       chapter.sections?.forEach((section, si) => {
         section.videos?.forEach((video, vi) => {
           const realId = resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id;
-          list.push({ video: { ...video, id: realId }, ci, si, vi });
+          const vItem = { kind: 'video', id: realId, video, ci, si, vi };
+          items.push(vItem);
+          const qInfo = videoQuizInfo.hasOwnProperty(realId) ? (videoQuizInfo[realId] || {}) : undefined;
+          if (qInfo === undefined) {
+            // Quiz info not loaded yet for this video: insert a gating placeholder
+            items.push({
+              kind: 'quizUnknown',
+              videoId: realId,
+              ci, si, vi
+            });
+          } else if (qInfo.hasQuiz) {
+            items.push({
+              kind: 'quiz',
+              videoId: realId,
+              quizId: qInfo.quizId,
+              quizTitle: qInfo.quizTitle,
+              isRequired: !!qInfo.isRequired,
+              unlockNextOnPass: qInfo.unlockNextOnPass !== undefined ? !!qInfo.unlockNextOnPass : true,
+              passed: !!qInfo.passed,
+              ci, si, vi
+            });
+          }
         });
       });
     });
-    return list;
+    return items;
+  };
+
+  const isItemCompletedForGating = (item) => {
+    if (item.kind === 'video') {
+      return getVideoStatus(item.video) === 'completed';
+    }
+    if (item.kind === 'quiz') {
+      // If quiz is required (or unlockNextOnPass true), it must be passed to be "completed" for gating
+      const blocksNext = item.isRequired || item.unlockNextOnPass;
+      return blocksNext ? !!item.passed : true;
+    }
+    if (item.kind === 'quizUnknown') {
+      // Be conservative until quiz info loads: treat as blocking
+      return false;
+    }
+    return false;
+  };
+
+  const getFirstIncompleteIndex = (items) => {
+    for (let i = 0; i < items.length; i++) {
+      if (!isItemCompletedForGating(items[i])) {
+        return i;
+      }
+    }
+    return items.length; // all completed
   };
 
   const isVideoLocked = (video) => {
-    if (isTeacher) return false;
-    const all = getAllVideosInOrder();
-    if (all.length === 0) return true;
-    // find contiguous completed prefix length
-    let prefixCompleted = 0;
-    for (let i = 0; i < all.length; i++) {
-      const v = all[i].video;
-      const status = getVideoStatus(v);
-      if (status === 'completed') {
-        prefixCompleted++;
-        continue;
-      }
-      break;
-    }
+    const ordered = getOrderedItems();
+    if (ordered.length === 0) return true;
+    const firstIncomplete = getFirstIncompleteIndex(ordered);
     const realId = resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id;
-    if (realId === currentVideoId) return false; // current video should always be interactive
-    const idx = all.findIndex(item => item.video.id === realId);
+    const idx = ordered.findIndex(it => it.kind === 'video' && it.id === realId);
     if (idx === -1) return true;
-    // Unlocked if already in the completed prefix, or is the immediate next video
-    return !(idx <= prefixCompleted);
+    if (realId === currentVideoId) return false; // allow interacting with the currently open item
+    // Locked if it comes after the first incomplete item
+    return idx > firstIncomplete;
   };
 
   const getVideoIcon = (video, isLocked) => {
-    if (isTeacher) {
-      return <CheckBoxIcon color="success" />;
-    }
     if (isLocked) {
       return <LockIcon color="disabled" />;
     }
@@ -268,7 +301,6 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey, 
   };
 
   const getVideoTextColor = (video, isLocked, isCurrent) => {
-    if (isTeacher) return isCurrent ? 'primary.main' : 'text.primary';
     if (isCurrent) return 'primary.main';
     if (isLocked) return 'text.disabled';
     const status = getVideoStatus(video);
@@ -382,19 +414,31 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey, 
               <AccordionDetails sx={{ p: 0 }}>
                 {chapter.sections && chapter.sections.map((section, sectionIndex) => (
                   <Box key={section?.id || `section-${chapterIndex}-${sectionIndex}` } sx={{ mb: 1 }}>
+                  <Box sx={{ px: 2, py: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <Typography 
                       variant="body2" 
                       color="textSecondary" 
-                      sx={{ px: 2, py: 1, fontWeight: 'medium' }}
+                      sx={{ fontWeight: 'medium' }}
                     >
                       {section.title}
                     </Typography>
+                    {(() => {
+                      const filesCount = (section.videos || []).filter(v => (v?.type === 'file') || /(\.pdf|\/uploads\/files\/)/i.test(String(v?.fileUrl || ''))).length;
+                      const videosCount = (section.videos || []).length - filesCount;
+                      return (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Chip label={`${filesCount} ${filesCount === 1 ? 'file' : 'files'}`} size="small" />
+                          <Chip label={`${videosCount} ${videosCount === 1 ? 'video' : 'videos'}`} size="small" />
+                        </Box>
+                      );
+                    })()}
+                  </Box>
                     
                     <List dense>
                       {section.videos && section.videos.map((video, videoIndex) => {
                         const isLocked = isVideoLocked(video);
                         const isCurrent = video.id === currentVideoId;
-                        const status = isTeacher ? 'completed' : getVideoStatus(video);
+                        const status = getVideoStatus(video);
                         const quizInfo = videoQuizInfo[(resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id)] || {};
                         
                         const keyId = video?.id || `${chapterIndex}-${sectionIndex}-${videoIndex}`;
@@ -450,26 +494,36 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey, 
                             {quizInfo.hasQuiz && (
                               <ListItem disablePadding>
                                 {(() => {
-                                  const canStartQuiz = isTeacher || (!isVideoLocked(video) && getVideoStatus(video) === 'completed');
+                                  const ordered = getOrderedItems();
+                                  const realId = resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id;
+                                  const quizIdx = ordered.findIndex(it => it.kind === 'quiz' && it.videoId === realId && it.quizId === quizInfo.quizId);
+                                  const firstIncomplete = getFirstIncompleteIndex(ordered);
+                                  const locked = (quizIdx === -1 ? true : (quizIdx > firstIncomplete));
+                                  const passed = !!quizInfo.passed;
                                   return (
-                                <ListItemButton onClick={() => navigate(`/quiz/${quizInfo.quizId}?videoId=${resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id}`)} disabled={!canStartQuiz}>
-                                  <ListItemIcon sx={{ minWidth: 32 }}>
-                                    {quizInfo.passed ? <CheckBoxIcon color="success" /> : <CheckBoxOutlineBlankIcon color={canStartQuiz ? 'action' : 'disabled'} />}
-                                  </ListItemIcon>
-                                  <ListItemText
-                                    primary={
-                                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <Typography variant="body2">{t('courseSidebar.quizTitle', { title: quizInfo.quizTitle || 'Chapter quiz' })}</Typography>
-                                        {quizInfo.isRequired && <Chip label={t('courseSidebar.required')} size="small" />}
-                                      </Box>
-                                    }
-                                    secondary={quizInfo.passed ? (
-                                      <Typography variant="caption" color="success.main">{t('courseSidebar.passed')}</Typography>
-                                    ) : (
-                                      <Typography variant="caption" color="textSecondary">{canStartQuiz ? t('courseSidebar.notCompleted') : t('courseSidebar.completePrevFirst')}</Typography>
-                                    )}
-                                  />
-                                </ListItemButton>
+                                    <ListItemButton
+                                      onClick={() => navigate(`/quiz/${quizInfo.quizId}?videoId=${realId}`)}
+                                      disabled={locked}
+                                    >
+                                      <ListItemIcon sx={{ minWidth: 32 }}>
+                                        {locked ? <LockIcon color="disabled" /> : (passed ? <CheckBoxIcon color="success" /> : <CheckBoxOutlineBlankIcon color="action" />)}
+                                      </ListItemIcon>
+                                      <ListItemText
+                                        primary={
+                                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <Typography variant="body2">{t('courseSidebar.quizTitle', { title: quizInfo.quizTitle || 'Chapter quiz' })}</Typography>
+                                            {quizInfo.isRequired && <Chip label={t('courseSidebar.required')} size="small" />}
+                                          </Box>
+                                        }
+                                        secondary={passed ? (
+                                          <Typography variant="caption" color="success.main">{t('courseSidebar.passed')}</Typography>
+                                        ) : locked ? (
+                                          <Typography variant="caption" color="textSecondary">{t('courseSidebar.completePrevFirst')}</Typography>
+                                        ) : (
+                                          <Typography variant="caption" color="textSecondary">{t('courseSidebar.notCompleted')}</Typography>
+                                        )}
+                                      />
+                                    </ListItemButton>
                                   );
                                 })()}
                               </ListItem>

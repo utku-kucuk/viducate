@@ -129,14 +129,19 @@ const TeacherDashboard = () => {
   const togglePublish = async (course) => {
     try {
       const nextVal = !course.isPublished;
+      // Rely on server-side validation for publish rules (processing/admin locks)
       await axios.put(`/api/courses/${course.id}`, { isPublished: nextVal });
       setCourses(prev => prev.map(c => c.id === course.id ? { ...c, isPublished: nextVal, updatedAt: new Date().toISOString() } : c));
       setSnackbar({ open: true, message: nextVal ? 'Course published' : 'Course unpublished', severity: 'success' });
     } catch (error) {
       console.error('Error updating course status:', error);
-      const msg = error?.response?.data?.message || '';
+      const msg = error?.response?.data?.message || error?.response?.data?.error || '';
       if (error?.response?.status === 403 && /not allowed|locked|admin/i.test(msg)) {
         setSnackbar({ open: true, message: 'Yayın izni admin tarafından engellenmiştir. Lütfen admin ile iletişime geçin.', severity: 'warning' });
+      } else if (error?.response?.status === 400 && /finish processing|processing/i.test(msg)) {
+        setSnackbar({ open: true, message: 'Tüm videoların işlenmesi tamamlanmadan kurs yayımlanamaz. Lütfen birkaç dakika sonra tekrar deneyin.', severity: 'info' });
+      } else if (error?.response?.status === 400 && msg) {
+        setSnackbar({ open: true, message: msg, severity: 'warning' });
       } else {
         setSnackbar({ open: true, message: 'Failed to update course status', severity: 'error' });
       }
@@ -429,8 +434,15 @@ const TeacherDashboard = () => {
                               {course.description?.substring(0, 80)}...
                             </Typography>
                             <Box display="flex" gap={1} sx={{ mb: 1 }}>
+                              {course.category && (
                               <Chip label={course.category} size="small" color="primary" variant="outlined" />
+                              )}
+                              {course.department && (
+                                <Chip label={course.department} size="small" color="info" variant="outlined" />
+                              )}
+                              {course.level && (
                               <Chip label={course.level} size="small" color="secondary" variant="outlined" />
+                              )}
                             </Box>
                             <Box display="flex" gap={2}>
                               <Typography variant="caption" color="textSecondary">

@@ -238,6 +238,10 @@ const VideoPlayer = () => {
     try {
       setLoading(true);
       setError(null);
+      // Reset notes when switching content
+      setNotes('');
+      setLastNotesSavedAt(null);
+      setIsEditingNotes(true);
       setVideoData(null);
       setWatchedSegments([]);
       setCurrentWatchSegment(null);

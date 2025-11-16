@@ -78,14 +78,17 @@ const Dashboard = () => {
           const videosWithProgress = progressResponse.data.data || [];
           
           let courseProgress = 0;
+          // Build a quick map for completion checks
+          const progressByVideoId = new Map();
           for (const video of videosWithProgress) {
             if (video.Progress && video.Progress.length > 0) {
               const progress = video.Progress[0];
               if (progress.isCompleted) {
                 completedVideos++;
               }
-              totalWatchTime += (progress.watchDuration || 0) / 3600; // Convert to hours
+              totalWatchTime += (progress.watchedDuration || 0) / 3600; // Convert seconds to hours
               courseProgress += progress.watchPercentage || 0;
+              progressByVideoId.set(video.id, progress);
             }
           }
 
@@ -97,12 +100,38 @@ const Dashboard = () => {
 
           // Update course with progress
           course.progress = courseProgress;
-          if (course.progress >= 100) {
-            completedCoursesCount++;
-          }
+          // Determine course completion: all videos/files completed AND all required quizzes passed
+          let allVideosCompleted = Array.isArray(course.videos) && course.videos.length > 0
+            ? course.videos.every(v => {
+                const p = progressByVideoId.get(v.id);
+                return p && (Boolean(p.isCompleted) || Number(p.watchPercentage || 0) >= 90);
+              })
+            : false;
+          let allRequiredQuizzesPassed = true;
+          try {
+            if (Array.isArray(course.videos) && course.videos.length > 0) {
+              const quizChecks = await Promise.all(course.videos.map(async (v) => {
+                try {
+                  const resp = await axios.get(`/api/quizzes/video/${v.id}`);
+                  const info = resp?.data || {};
+                  if (info.hasQuiz && info.isRequired) {
+                    return Boolean(info.passed);
+                  }
+                  return true;
+                } catch {
+                  // if failed to fetch quiz info, don't block completion
+                  return true;
+                }
+              }));
+              allRequiredQuizzesPassed = quizChecks.every(Boolean);
+            }
+          } catch {}
+          course.completed = Boolean(allVideosCompleted && allRequiredQuizzesPassed);
+          if (course.completed) completedCoursesCount++;
         } catch (error) {
           console.error(`Error fetching progress for course ${course.id}:`, error);
           course.progress = 0;
+          course.completed = false;
         }
       }
 
@@ -123,6 +152,7 @@ const Dashboard = () => {
         title: course.title,
         description: course.description,
         progress: course.progress || 0,
+        completed: Boolean(course.completed),
         teacher: course.teacher,
         videoCount: course.videos ? course.videos.length : 0,
         thumbnail: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjBmMGYwIi8+CiAgPHRleHQgeD0iNTAlIiB5PSI1MCUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM5OTkiPjMwMHg0NTA8L3RleHQ+Cjwvc3ZnPg=='
@@ -285,11 +315,16 @@ const Dashboard = () => {
                       <Typography variant="h6" sx={{ fontWeight: 600, flex: 1 }}>
                         {course.title}
                       </Typography>
-                      <Chip 
-                        label={`${course.videoCount} videos`} 
-                        size="small" 
-                        variant="outlined"
-                      />
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        {course.completed && (
+                          <Chip size="small" color="success" label={t('courseDetail.completed')} />
+                        )}
+                        <Chip 
+                          label={`${course.videoCount} videos`} 
+                          size="small" 
+                          variant="outlined"
+                        />
+                      </Box>
                     </Box>
                     
                     {course.description && (
@@ -325,15 +360,26 @@ const Dashboard = () => {
                       )}
                     </Box>
                     
-                    <Button
-                      component={Link}
-                      to={`/course/${course.id}`}
-                      variant="contained"
-                      fullWidth
-                      startIcon={<PlayIcon />}
-                    >
-                      {t('dashboard.continueLearning')}
-                    </Button>
+                    {course.completed ? (
+                      <Button
+                        component={Link}
+                        to="/"
+                        variant="contained"
+                        fullWidth
+                      >
+                        {t('home.goToDashboard', 'Go to Dashboard')}
+                      </Button>
+                    ) : (
+                      <Button
+                        component={Link}
+                        to={`/course/${course.id}`}
+                        variant="contained"
+                        fullWidth
+                        startIcon={<PlayIcon />}
+                      >
+                        {t('dashboard.continueLearning')}
+                      </Button>
+                    )}
                   </CardContent>
                 </Card>
               </Grid>

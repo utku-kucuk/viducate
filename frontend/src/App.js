@@ -19,6 +19,7 @@ import Profile from './pages/Profile';
 import CreateCourse from './pages/CreateCourse';
 import Notes from './pages/Notes';
 import QuizPlayer from './pages/QuizPlayer';
+import FileViewer from './pages/FileViewer';
 
 function App() {
   return (
@@ -80,6 +81,11 @@ function App() {
             <Route path="/video/:videoId" element={
               <PrivateRoute allowedRoles={['student', 'teacher', 'admin']}>
                 <VideoPlayer />
+              </PrivateRoute>
+            } />
+            <Route path="/file/:videoId" element={
+              <PrivateRoute allowedRoles={['student', 'teacher', 'admin']}>
+                <FileViewer />
               </PrivateRoute>
             } />
             <Route path="/quiz/:quizId" element={

@@ -30,6 +30,23 @@ const QuizPlayer = () => {
         const vresp = await axios.get(`/api/videos/${videoId}`);
         const vd = vresp?.data?.data;
         if (vd?.courseId) setCourseId(vd.courseId);
+        // Soft gate on client: ensure video is completed before allowing quiz
+        try {
+          const pg = await axios.get(`/api/progress/video/${videoId}`);
+          const progress = pg?.data?.progress || pg?.data?.data || null;
+          const watchedPct = Number(progress?.watchPercentage || 0);
+          const completed = Boolean(progress?.isCompleted) || watchedPct >= 90;
+          if (!completed) {
+            setError(t('quizPlayer.mustCompleteVideo', 'Please complete the video before attempting the quiz.'));
+            setLoading(false);
+            return;
+          }
+        } catch (e) {
+          // If progress not found, treat as not completed
+          setError(t('quizPlayer.mustCompleteVideo', 'Please complete the video before attempting the quiz.'));
+          setLoading(false);
+          return;
+        }
       }
       const resp = await axios.post(`/api/quizzes/${quizId}/attempts`, { videoId: videoId || null });
       setAttempt(resp?.data?.data);
@@ -38,7 +55,9 @@ const QuizPlayer = () => {
       setError(null);
     } catch (err) {
       console.error('Start quiz error:', err?.response?.data || err);
-      const serverMsg = err?.response?.data?.error || err?.message || 'Failed to start quiz.';
+      const serverMsg = err?.response?.status === 403
+        ? t('quizPlayer.mustCompleteVideo', 'Please complete the video before attempting the quiz.')
+        : (err?.response?.data?.error || err?.message || 'Failed to start quiz.');
       const details = err?.response?.data?.details;
       setError(details ? `${serverMsg} - ${JSON.stringify(details)}` : serverMsg);
     } finally {
@@ -132,6 +151,11 @@ const QuizPlayer = () => {
       )}
       <Box sx={{ mt: 3, display: 'flex', gap: 2 }}>
         <Button variant="outlined" onClick={() => navigate(-1)}>{t('quizPlayer.back')}</Button>
+        {error && videoId && (
+          <Button variant="contained" color="primary" onClick={() => navigate(`/video/${videoId}`)}>
+            {t('quizPlayer.goToVideo', 'Go to Video')}
+          </Button>
+        )}
         {!result?.passed && (
           <Button
             variant="outlined"

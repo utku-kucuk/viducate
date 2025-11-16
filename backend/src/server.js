@@ -16,6 +16,7 @@ const quizRoutes = require('./routes/quizzes');
 const adminRoutes = require('./routes/admin');
 const notesRoutes = require('./routes/notes');
 const metaRoutes = require('./routes/meta');
+const fileRoutes = require('./routes/files');
 
 const app = express();
 const PORT = process.env.PORT || (process.env.NODE_ENV === 'development' ? 5001 : 5000);
@@ -81,7 +82,19 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Static files for uploads
-app.use('/uploads', express.static('uploads'));
+// Allow embedding uploaded files in iframes from frontend dev origin (to preview PDFs/PPTX)
+app.use('/uploads', (req, res, next) => {
+  const isProd = process.env.NODE_ENV === 'production';
+  if (!isProd) {
+    // Remove restrictive frame headers and allow frontend dev to embed
+    res.removeHeader('X-Frame-Options');
+    res.setHeader(
+      'Content-Security-Policy',
+      "frame-ancestors 'self' http://localhost:3000 http://127.0.0.1:3000"
+    );
+  }
+  next();
+}, express.static('uploads'));
 
 // Handle preflight requests
 app.options('*', cors());
@@ -121,6 +134,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/notes', notesRoutes);
 app.use('/api/quizzes', quizRoutes);
 app.use('/api/meta', metaRoutes);
+app.use('/api/files', fileRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

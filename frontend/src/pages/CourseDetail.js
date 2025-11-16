@@ -41,7 +41,11 @@ const CourseDetail = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isEnrolled, setIsEnrolled] = useState(false);
-  const [isTeacher, setIsTeacher] = useState(false);
+  // If redirected right after creating a course, hide enroll immediately for owner
+  const ownerJustCreated = Boolean(useLocation().state?.ownerJustCreated);
+  const [isTeacher, setIsTeacher] = useState(ownerJustCreated || false);
+  const [isOwner, setIsOwner] = useState(ownerJustCreated || false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [flatVideos, setFlatVideos] = useState([]);
   const [videoQuizInfo, setVideoQuizInfo] = useState({});
 
@@ -109,8 +113,13 @@ const CourseDetail = () => {
         clientIsEnrolled = Array.isArray(enrolledResp.data.data) && enrolledResp.data.data.some(c => c.id === courseId);
       }
       setIsEnrolled(clientIsEnrolled);
-      // Admins should have full teacher-like access only when adminPreview=1
-      setIsTeacher((user?.role === 'teacher' && courseResponse.data.data.teacherId === user.id) || (user?.role === 'admin'));
+      // Role flags
+      const ownerFlag = courseResponse.data.data.teacherId === user?.id;
+      const adminFlag = user?.role === 'admin';
+      setIsOwner(ownerFlag);
+      setIsAdmin(adminFlag);
+      // Admins/owners have teacher-like access to bypass locks
+      setIsTeacher((user?.role === 'teacher' && ownerFlag) || adminFlag);
       // Build flattened video order for locking logic
       let allVideos = [];
       if (courseData?.chapters && Array.isArray(courseData.chapters)) {
@@ -284,6 +293,11 @@ const CourseDetail = () => {
               <Typography variant="body1" color="textSecondary" sx={{ mb: 2 }}>
                 {course.description}
               </Typography>
+              {course?.teacher && (
+                <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+                  {t('courses.instructor')}: {course.teacher.firstName} {course.teacher.lastName}
+                </Typography>
+              )}
               
               <Box display="flex" gap={2} flexWrap="wrap" sx={{ mb: 2 }}>
                 {course.category && (
@@ -298,11 +312,32 @@ const CourseDetail = () => {
               </Box>
               
               <Box display="flex" gap={3} sx={{ mb: 2 }}>
+                {(() => {
+                  // Build a flattened list of content
+                  const items = [];
+                  if (Array.isArray(course.chapters) && course.chapters.length > 0) {
+                    course.chapters.forEach(ch => ch.sections?.forEach(sec => sec.videos?.forEach(v => items.push(v))));
+                  } else if (Array.isArray(course.videos)) {
+                    items.push(...course.videos);
+                  } else if (Array.isArray(course.Videos)) {
+                    items.push(...course.Videos);
+                  }
+                  // Determine files vs videos
+                  const filesCount = items.filter(v => (v?.type === 'file') || /(\.pdf|\/uploads\/files\/)/i.test(String(v?.fileUrl || ''))).length;
+                  const videosCount = items.length - filesCount;
+                  return (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <Typography variant="body2" color="textSecondary">
+                        {t('courseDetail.filesCount', { count: filesCount })}
+                      </Typography>
+                    <Typography variant="body2" color="textSecondary">
+                        {t('courseDetail.videosCount', { count: videosCount })}
+                    </Typography>
+                    </Box>
+                  );
+                })()}
                 <Typography variant="body2" color="textSecondary">
-                  <strong>{course.totalVideos || 0}</strong> {t('dashboard.videosCount', { count: course.totalVideos || 0 })}
-                </Typography>
-                <Typography variant="body2" color="textSecondary">
-                  <strong>{course.studentCount || 0}</strong> {t('courseDetail.studentsEnrolled', { count: course.studentCount || 0 })}
+                  {t('courseDetail.studentsEnrolled', { count: course.studentCount || 0 })}
                 </Typography>
                 {course.rating > 0 && (
                   <Typography variant="body2" color="textSecondary">
@@ -312,7 +347,8 @@ const CourseDetail = () => {
               </Box>
             </Box>
             
-            {!isEnrolled && !isTeacher && (
+            {/* Enroll button is shown if not enrolled and user is not the owner (teachers/admins can enroll in others' courses) */}
+            {!isEnrolled && !isOwner && (
               <Button
                 variant="contained"
                 size="large"
@@ -367,12 +403,26 @@ const CourseDetail = () => {
                                 <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
                                   {t('courseDetail.section', { index: `${chapterIndex + 1}.${sectionIndex + 1}`, title: section.title })}
                                 </Typography>
+                                {(() => {
+                                  const filesCount = (section.videos || []).filter(v => (v?.type === 'file') || /(\.pdf|\/uploads\/files\/)/i.test(String(v?.fileUrl || ''))).length;
+                                  const videosCount = (section.videos || []).length - filesCount;
+                                  return (
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                      <Chip 
+                                        label={t('courseDetail.filesCount', { count: filesCount })} 
+                                        size="small" 
+                                        color="info" 
+                                        variant="outlined" 
+                                      />
                                 <Chip 
-                                  label={t('courseDetail.videosCount', { count: section.videos?.length || 0 })} 
+                                        label={t('courseDetail.videosCount', { count: videosCount })} 
                                   size="small" 
                                   color="secondary" 
                                   variant="outlined" 
                                 />
+                                    </Box>
+                                  );
+                                })()}
                               </Box>
                             </AccordionSummary>
                             <AccordionDetails>
@@ -392,7 +442,7 @@ const CourseDetail = () => {
                                   const quizInfo = videoQuizInfo[resolvedVideoId || video.id] || { hasQuiz: false };
 
                                     return (
-                                      <React.Fragment key={resolvedVideoId || video.id || `video-${videoIndex}`}>
+                                      <React.Fragment key={`${chapterIndex}-${sectionIndex}-${videoIndex}-${resolvedVideoId || video.id || 'noid'}`}>
                                         <ListItem 
                                           sx={{ 
                                             px: 0,
@@ -449,7 +499,13 @@ const CourseDetail = () => {
                                           
                                           <Button
                                             component={Link}
-                                            to={resolvedVideoId ? `/video/${resolvedVideoId}${(user?.role === 'admin' || adminPreviewFlag) ? '?adminPreview=1' : ''}` : '#'}
+                                            to={(() => {
+                                              const isFile = (video?.type === 'file') || /(\.pdf|\.pptx?|\/uploads\/files\/)/i.test(String(video?.fileUrl || ''));
+                                              if (!resolvedVideoId) return '#';
+                                              const base = isFile ? '/file/' : '/video/';
+                                              const suffix = (user?.role === 'admin' || adminPreviewFlag) ? '?adminPreview=1' : '';
+                                              return `${base}${resolvedVideoId}${suffix}`;
+                                            })()}
                                             variant="contained"
                                             size="small"
                                             startIcon={<PlayIcon />}

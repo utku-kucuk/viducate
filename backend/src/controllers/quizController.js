@@ -186,6 +186,15 @@ const startAttempt = async (req, res) => {
     if (videoId) {
       const link = await VideoQuiz.findOne({ where: { videoId, quizId } });
       if (!link) return res.status(400).json({ error: 'Quiz not assigned to this video' });
+      // Enforce progression: students must complete the video before attempting the quiz
+      if (req.user && req.user.role === 'student') {
+        const progress = await Progress.findOne({ where: { userId: req.user.id, videoId } });
+        const watchedPct = Number(progress?.watchPercentage || 0);
+        const completed = Boolean(progress?.isCompleted) || watchedPct >= 90;
+        if (!completed) {
+          return res.status(403).json({ error: 'Please complete the video before attempting the quiz.' });
+        }
+      }
     }
 
     const quiz = await Quiz.findByPk(quizId);

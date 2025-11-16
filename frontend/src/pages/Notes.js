@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Container, Typography, Box, Paper, TextField, InputAdornment, Chip, Button, Divider, Snackbar, Alert } from '@mui/material';
-import { Search, Add } from '@mui/icons-material';
+import { Container, Typography, Box, Paper, TextField, InputAdornment, Chip, Button, Divider, Snackbar, Alert, IconButton, Tooltip } from '@mui/material';
+import { Search, Add, Close, Edit as EditIcon, Save as SaveIcon, Clear as CancelIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import axios from 'axios';
 
 const truncate = (text, max = 160) => {
@@ -19,6 +19,8 @@ const Notes = () => {
   const [createContent, setCreateContent] = useState('');
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
   const [standaloneNotes, setStandaloneNotes] = useState([]);
+  const [editing, setEditing] = useState({ type: null, id: null, videoId: null });
+  const [editValue, setEditValue] = useState('');
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -66,7 +68,7 @@ const Notes = () => {
     <Container maxWidth="md" sx={{ mt: 4, mb: 6 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
         <Typography variant="h4" component="h1">My Notes</Typography>
-        <Button startIcon={<Add />} variant="contained" onClick={() => setCreating(v => !v)}>
+        <Button startIcon={creating ? <Close /> : <Add />} variant="contained" onClick={() => setCreating(v => !v)}>
           {creating ? 'Close' : 'New Note'}
         </Button>
       </Box>
@@ -154,18 +156,75 @@ const Notes = () => {
               <Typography variant="h6" sx={{ mt: 2 }}>Personal Notes</Typography>
               {standaloneNotes.map(n => (
                 <Paper key={n.id} sx={{ p: 2 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-                    <Typography variant="h6">{n.title}</Typography>
-                    <Chip size="small" label={n.updatedAt ? new Date(n.updatedAt).toLocaleString() : '—'} />
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1, gap: 1 }}>
+                    <Typography variant="h6" sx={{ mr: 2, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.title}</Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: { xs: '60%', sm: '50%' } }}>
+                      <Chip size="small" label={n.updatedAt ? new Date(n.updatedAt).toLocaleString() : '—'} variant="outlined" />
+                      {editing.type === 'personal' && editing.id === n.id ? (
+                        <>
+                          <Tooltip title="Save">
+                            <IconButton size="small" color="success" onClick={async () => {
+                              try {
+                                await axios.put(`/api/notes/${n.id}`, { content: editValue });
+                                setStandaloneNotes(prev => prev.map(x => x.id === n.id ? { ...x, content: editValue, updatedAt: new Date().toISOString() } : x));
+                                setEditing({ type: null, id: null, videoId: null });
+                                setEditValue('');
+                                setToast({ open: true, message: 'Note updated', severity: 'success' });
+                              } catch (e) {
+                                setToast({ open: true, message: 'Failed to update note', severity: 'error' });
+                              }
+                            }}>
+                              <SaveIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Cancel">
+                            <IconButton size="small" onClick={() => { setEditing({ type: null, id: null, videoId: null }); setEditValue(''); }}>
+                              <CancelIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </>
+                      ) : (
+                        <>
+                          <Tooltip title="Edit">
+                            <IconButton size="small" color="primary" onClick={() => { setEditing({ type: 'personal', id: n.id, videoId: null }); setEditValue(n.content || ''); }}>
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Delete">
+                            <IconButton size="small" color="error" onClick={async () => {
+                              try {
+                                await axios.delete(`/api/notes/${n.id}`);
+                                setStandaloneNotes(prev => prev.filter(x => x.id !== n.id));
+                                setToast({ open: true, message: 'Note deleted', severity: 'success' });
+                              } catch (e) {
+                                setToast({ open: true, message: 'Failed to delete note', severity: 'error' });
+                              }
+                            }}>
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </>
+                      )}
+                    </Box>
                   </Box>
                   {n.description && (
                     <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
                       {n.description}
                     </Typography>
                   )}
-                  <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-                    {truncate(n.content, 600)}
-                  </Typography>
+                  {editing.type === 'personal' && editing.id === n.id ? (
+                    <TextField
+                      fullWidth
+                      multiline
+                      minRows={3}
+                      value={editValue}
+                      onChange={e => setEditValue(e.target.value)}
+                    />
+                  ) : (
+                    <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                      {truncate(n.content, 600)}
+                    </Typography>
+                  )}
                 </Paper>
               ))}
             </>
@@ -180,12 +239,69 @@ const Notes = () => {
                     <Typography variant="body2" color="textSecondary">Course: {item.courseTitle}</Typography>
                   )}
                 </Box>
-                <Chip size="small" label={item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '—'} />
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: { xs: '60%', sm: '50%' } }}>
+                  <Chip size="small" label={item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '—'} variant="outlined" />
+                  {editing.type === 'video' && editing.id === item.id ? (
+                    <>
+                      <Tooltip title="Save">
+                        <IconButton size="small" color="success" onClick={async () => {
+                          try {
+                            await axios.put(`/api/progress/video/${editing.videoId}/notes`, { notes: editValue });
+                            setNotes(prev => prev.map(n => n.id === item.id ? { ...n, notes: editValue, updatedAt: new Date().toISOString() } : n));
+                            setEditing({ type: null, id: null, videoId: null });
+                            setEditValue('');
+                            setToast({ open: true, message: 'Note updated', severity: 'success' });
+                          } catch (e) {
+                            setToast({ open: true, message: 'Failed to update note', severity: 'error' });
+                          }
+                        }}>
+                          <SaveIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Cancel">
+                        <IconButton size="small" color="default" onClick={() => { setEditing({ type: null, id: null, videoId: null }); setEditValue(''); }}>
+                          <CancelIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </>
+                  ) : (
+                    <>
+                      <Tooltip title="Edit">
+                        <IconButton size="small" color="primary" onClick={() => { setEditing({ type: 'video', id: item.id, videoId: item.videoId }); setEditValue(item.notes || ''); }}>
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Delete">
+                        <IconButton size="small" color="error" onClick={async () => {
+                          try {
+                            await axios.put(`/api/progress/video/${item.videoId}/notes`, { notes: '' });
+                            setNotes(prev => prev.filter(n => n.id !== item.id));
+                            setToast({ open: true, message: 'Note deleted', severity: 'success' });
+                          } catch (e) {
+                            setToast({ open: true, message: 'Failed to delete note', severity: 'error' });
+                          }
+                        }}>
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </>
+                  )}
+                </Box>
               </Box>
               <Divider sx={{ mb: 1 }} />
-              <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-                {truncate(item.notes, 400)}
-              </Typography>
+              {editing.type === 'video' && editing.id === item.id ? (
+                <TextField
+                  fullWidth
+                  multiline
+                  minRows={3}
+                  value={editValue}
+                  onChange={e => setEditValue(e.target.value)}
+                />
+              ) : (
+                <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                  {truncate(item.notes, 400)}
+                </Typography>
+              )}
             </Paper>
           ))}
         </Box>
