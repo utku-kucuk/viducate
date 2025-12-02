@@ -89,6 +89,7 @@ const CourseDetail = () => {
   const fetchCourseData = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null);
       
       // Ensure we have authentication headers
       const token = localStorage.getItem('token');
@@ -99,9 +100,18 @@ const CourseDetail = () => {
       // Admin preview ONLY when adminPreview flag is explicitly provided
       const useAdminPreview = adminPreviewFlag === true;
       const apiUrl = useAdminPreview ? `/api/courses/${courseId}?adminPreview=1` : `/api/courses/${courseId}`;
+      
       const [courseResponse, progressResponse] = await Promise.all([
-        axios.get(apiUrl),
-        user?.role === 'student' ? axios.get(`/api/progress/course/${courseId}`) : Promise.resolve({ data: { data: [] } })
+        axios.get(apiUrl).catch(err => {
+          console.error('Error fetching course:', err);
+          throw err;
+        }),
+        user?.role === 'student' 
+          ? axios.get(`/api/progress/course/${courseId}`).catch(err => {
+              console.warn('Error fetching progress (non-critical):', err);
+              return { data: { data: [] } };
+            })
+          : Promise.resolve({ data: { data: [] } })
       ]);
 
       const courseData = courseResponse.data.data;
@@ -146,11 +156,34 @@ const CourseDetail = () => {
         let latestVideoId = null;
         let latestTime = 0;
         courseProgressList.forEach(p => {
-          progressMap[p.videoId] = p;
-          const ts = p.lastWatchedAt ? new Date(p.lastWatchedAt).getTime() : 0;
-          if (ts > latestTime) {
-            latestTime = ts;
-            latestVideoId = p.videoId;
+          if (!p || !p.videoId) return; // Skip invalid progress entries
+          try {
+            // Store progress by videoId (primary key)
+            const vidId = String(p.videoId);
+            progressMap[vidId] = p;
+            // Also store by any matching IDs from all videos (including chapter videos) for easier lookup
+            if (Array.isArray(allVideos)) {
+              allVideos.forEach(v => {
+                if (v && v.id && String(v.id) === vidId) {
+                  progressMap[String(v.id)] = p;
+                }
+              });
+            }
+            // Also check courseData.videos if available
+            if (Array.isArray(courseData.videos)) {
+              courseData.videos.forEach(v => {
+                if (v && v.id && String(v.id) === vidId) {
+                  progressMap[String(v.id)] = p;
+                }
+              });
+            }
+            const ts = p.lastWatchedAt ? new Date(p.lastWatchedAt).getTime() : 0;
+            if (ts > latestTime) {
+              latestTime = ts;
+              latestVideoId = p.videoId;
+            }
+          } catch (e) {
+            console.warn('Error processing progress entry:', e, p);
           }
         });
         setUserProgress(progressMap);
@@ -159,16 +192,30 @@ const CourseDetail = () => {
 
       // Fetch quiz info for each resolved video id
       try {
-        const quizPromises = allVideos.map(async (video) => {
-          const resp = await axios.get(`/api/quizzes/video/${video.id}`);
-          return { videoId: video.id, info: resp.data || { hasQuiz: false } };
-        });
-        const results = await Promise.allSettled(quizPromises);
-        const map = {};
-        results.forEach(r => { if (r.status === 'fulfilled') { map[r.value.videoId] = r.value.info; } });
-        setVideoQuizInfo(map);
+        if (allVideos && allVideos.length > 0) {
+          const quizPromises = allVideos
+            .filter(video => video && video.id) // Only process videos with IDs
+            .map(async (video) => {
+              try {
+                const resp = await axios.get(`/api/quizzes/video/${video.id}`);
+                return { videoId: video.id, info: resp.data || { hasQuiz: false } };
+              } catch (e) {
+                // Return default for failed requests
+                return { videoId: video.id, info: { hasQuiz: false } };
+              }
+            });
+          const results = await Promise.allSettled(quizPromises);
+          const map = {};
+          results.forEach(r => { 
+            if (r.status === 'fulfilled' && r.value) { 
+              map[r.value.videoId] = r.value.info; 
+            } 
+          });
+          setVideoQuizInfo(map);
+        }
       } catch (e) {
-        // ignore errors
+        // ignore errors - don't break the page if quiz fetching fails
+        console.warn('Error fetching quiz info:', e);
       }
     } catch (error) {
       console.error('Error fetching course data:', error);
@@ -180,11 +227,39 @@ const CourseDetail = () => {
     } finally {
       setLoading(false);
     }
-  }, [courseId, user]);
+  }, [courseId, user, adminPreviewFlag]);
 
   useEffect(() => {
     fetchCourseData();
   }, [fetchCourseData]);
+
+  // Refresh course data when page becomes visible (user returns from video/file viewer)
+  // Use ref to track last refresh time and prevent excessive refreshes
+  const lastRefreshRef = React.useRef(0);
+  useEffect(() => {
+    let refreshTimeout = null;
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !loading) {
+        const now = Date.now();
+        // Only refresh if at least 2 seconds have passed since last refresh
+        if (now - lastRefreshRef.current < 2000) {
+          return;
+        }
+        // Clear any pending refresh
+        if (refreshTimeout) clearTimeout(refreshTimeout);
+        // Small delay to ensure any pending API calls from other pages complete
+        refreshTimeout = setTimeout(() => {
+          lastRefreshRef.current = Date.now();
+          fetchCourseData();
+        }, 500);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      if (refreshTimeout) clearTimeout(refreshTimeout);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [fetchCourseData, loading]);
 
   const isVideoUnlocked = (videoId) => {
     if (isTeacher) return true;
@@ -432,8 +507,11 @@ const CourseDetail = () => {
                                 <List sx={{ p: 0 }}>
                                   {section.videos.map((video, videoIndex) => {
                                     const resolvedVideoId = resolveVideoId(video);
-                                    const progress = userProgress[resolvedVideoId || video.id];
-                                    const isCompleted = progress?.isCompleted;
+                                    // Try multiple ID formats to find progress
+                                    const progressId = resolvedVideoId || video.id;
+                                    const progress = userProgress[progressId] || userProgress[String(progressId)];
+                                    // Check completion: either isCompleted flag OR watchPercentage >= 90
+                                    const isCompleted = progress?.isCompleted || (progress?.watchPercentage >= 90);
                                   const isWatched = progress?.watchPercentage > 0;
                                   const quizInfo = videoQuizInfo[resolvedVideoId || video.id] || { hasQuiz: false };
 
@@ -500,7 +578,9 @@ const CourseDetail = () => {
                                             const targetHref = resolvedVideoId ? `${base}${resolvedVideoId}${suffix}` : '#';
                                             // Lock all items when not enrolled (unless teacher/admin)
                                             const baseLocked = !isTeacher && !isEnrolled;
-                                            const sequentialLocked = !isTeacher && isEnrolled && !isVideoUnlocked(resolvedVideoId);
+                                            // If video is completed, always allow access (user can re-enter completed stages)
+                                            const videoCompleted = isCompleted || (progress?.watchPercentage >= 90);
+                                            const sequentialLocked = !isTeacher && isEnrolled && !videoCompleted && !isVideoUnlocked(resolvedVideoId);
                                             const isLocked = !resolvedVideoId || baseLocked || sequentialLocked;
                                             return (
                                               <Button
@@ -606,7 +686,8 @@ const CourseDetail = () => {
               <List>
                 {course.videos.map((video, index) => {
                   const progress = userProgress[video.id];
-                  const isCompleted = progress?.isCompleted;
+                  // Check completion: either isCompleted flag OR watchPercentage >= 90
+                  const isCompleted = progress?.isCompleted || (progress?.watchPercentage >= 90);
                   const isWatched = progress?.watchPercentage > 0;
 
                   return (

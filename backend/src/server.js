@@ -77,6 +77,19 @@ const authLimiter = rateLimit({
   legacyHeaders: false
 });
 
+// More lenient rate limiting for admin routes
+const adminLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: process.env.NODE_ENV === 'production' ? 2000 : 10000, // Higher limit for admin operations
+  message: 'Too many admin requests, please try again after 15 minutes',
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => {
+    // Skip rate limiting for health check
+    return req.path === '/api/health';
+  }
+});
+
 // Body parsing middleware
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -121,8 +134,14 @@ app.get('/api/placeholder/:width/:height', (req, res) => {
   res.send(svg);
 });
 
-// Apply general rate limiting to all routes except health
-app.use(generalLimiter);
+// Apply general rate limiting to all routes except health and admin
+app.use((req, res, next) => {
+  // Skip rate limiting for admin routes (they have their own limiter)
+  if (req.path.startsWith('/api/admin')) {
+    return next();
+  }
+  return generalLimiter(req, res, next);
+});
 
 // Routes with specific rate limiting
 app.use('/api/auth', authLimiter, authRoutes);
@@ -130,7 +149,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/videos', videoRoutes);
 app.use('/api/progress', progressRoutes);
-app.use('/api/admin', adminRoutes);
+app.use('/api/admin', adminLimiter, adminRoutes);
 app.use('/api/notes', notesRoutes);
 app.use('/api/quizzes', quizRoutes);
 app.use('/api/meta', metaRoutes);

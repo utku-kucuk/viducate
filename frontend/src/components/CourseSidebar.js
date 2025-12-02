@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -31,9 +31,19 @@ import { useTranslation } from 'react-i18next';
 const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey, readonly = false }) => {
   const { user } = useAuth();
   const isTeacher = user && (user.role === 'teacher' || user.role === 'admin');
+  // Check if user owns the course (is the teacher/admin who created it) or is an admin
+  // Admins can access all courses, teachers can access their own courses
+  const isCourseOwner = courseData && user && (
+    courseData.teacherId === user.id || 
+    user.role === 'admin'
+  );
   const navigate = useNavigate();
   const { courseId } = useParams();
+  const location = useLocation();
   const { t } = useTranslation();
+  // Check for adminPreview flag in URL (for admin preview mode)
+  const adminPreview = new URLSearchParams(location.search).get('adminPreview') === '1';
+  const canAccessAll = isCourseOwner || adminPreview;
   const [expandedChapters, setExpandedChapters] = useState({});
   const [videoProgress, setVideoProgress] = useState({});
   const [loading, setLoading] = useState(true);
@@ -274,6 +284,9 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey, 
   };
 
   const isVideoLocked = (video) => {
+    // Course owners (teachers/admins) and admin preview mode can access all stages without restrictions
+    if (canAccessAll) return false;
+    
     const ordered = getOrderedItems();
     if (ordered.length === 0) return true;
     const firstIncomplete = getFirstIncompleteIndex(ordered);
@@ -494,6 +507,34 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey, 
                             {quizInfo.hasQuiz && (
                               <ListItem disablePadding>
                                 {(() => {
+                                  // Course owners and admin preview can access all quizzes without restrictions
+                                  if (canAccessAll) {
+                                    const realId = resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id;
+                                    const passed = !!quizInfo.passed;
+                                    return (
+                                      <ListItemButton
+                                        onClick={() => navigate(`/quiz/${quizInfo.quizId}?videoId=${realId}`)}
+                                        disabled={false}
+                                      >
+                                        <ListItemIcon sx={{ minWidth: 32 }}>
+                                          {passed ? <CheckBoxIcon color="success" /> : <CheckBoxOutlineBlankIcon color="action" />}
+                                        </ListItemIcon>
+                                        <ListItemText
+                                          primary={
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                              <Typography variant="body2">{t('courseSidebar.quizTitle', { title: quizInfo.quizTitle || 'Chapter quiz' })}</Typography>
+                                              {quizInfo.isRequired && <Chip label={t('courseSidebar.required')} size="small" />}
+                                            </Box>
+                                          }
+                                          secondary={passed ? (
+                                            <Typography variant="caption" color="success.main">{t('courseSidebar.passed')}</Typography>
+                                          ) : (
+                                            <Typography variant="caption" color="textSecondary">{t('courseSidebar.notCompleted')}</Typography>
+                                          )}
+                                        />
+                                      </ListItemButton>
+                                    );
+                                  }
                                   const ordered = getOrderedItems();
                                   const realId = resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id;
                                   const quizIdx = ordered.findIndex(it => it.kind === 'quiz' && it.videoId === realId && it.quizId === quizInfo.quizId);
