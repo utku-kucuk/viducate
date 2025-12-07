@@ -16,6 +16,10 @@ const QuizPlayer = () => {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [courseId, setCourseId] = useState(null);
+  const [canCompleteCourse, setCanCompleteCourse] = useState(false);
+  const [completingCourse, setCompletingCourse] = useState(false);
+  const [courseCompleted, setCourseCompleted] = useState(false);
+  const [completionMessage, setCompletionMessage] = useState('');
 
   const params = new URLSearchParams(location.search);
   const videoId = params.get('videoId');
@@ -26,10 +30,11 @@ const QuizPlayer = () => {
       setLoading(true);
       const token = localStorage.getItem('token');
       if (token) axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      let videoData = null;
       if (videoId) {
         const vresp = await axios.get(`/api/videos/${videoId}`);
-        const vd = vresp?.data?.data;
-        if (vd?.courseId) setCourseId(vd.courseId);
+        videoData = vresp?.data?.data;
+        if (videoData?.courseId) setCourseId(videoData.courseId);
         // Soft gate on client: ensure video is completed before allowing quiz
         try {
           const pg = await axios.get(`/api/progress/video/${videoId}`);
@@ -53,6 +58,11 @@ const QuizPlayer = () => {
       setAnswers({});
       setResult(null);
       setError(null);
+      
+      // Check if this is the last content and if course can be completed
+      if (videoId && videoData?.courseId) {
+        checkCourseCompletionStatus(videoData.courseId, videoId);
+      }
     } catch (err) {
       console.error('Start quiz error:', err?.response?.data || err);
       const serverMsg = err?.response?.status === 403
@@ -79,7 +89,13 @@ const QuizPlayer = () => {
       const token = localStorage.getItem('token');
       if (token) axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       const resp = await axios.post(`/api/quizzes/attempts/${attempt.attemptId}/submit`, { answers: payload });
-      setResult(resp?.data?.data);
+      const resultData = resp?.data?.data;
+      setResult(resultData);
+      
+      // If quiz passed and this is the last content, check if course can be completed
+      if (resultData?.passed && videoId && courseId) {
+        await checkCourseCompletionStatus(courseId, videoId);
+      }
     } catch (err) {
       console.error('Submit quiz error:', err?.response?.data || err);
       const serverMsg = err?.response?.data?.error || err?.message || 'Failed to submit quiz.';
@@ -87,6 +103,118 @@ const QuizPlayer = () => {
       setError(details ? `${serverMsg} - ${JSON.stringify(details)}` : serverMsg);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // Check if course can be completed
+  const checkCourseCompletionStatus = async (courseId, currentVideoId) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (token) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      }
+      
+      // Get course data
+      const courseResp = await axios.get(`/api/courses/${courseId}`);
+      const course = courseResp?.data?.data;
+      
+      // Get all videos in course
+      let allVideos = [];
+      if (course.chapters && Array.isArray(course.chapters)) {
+        course.chapters.forEach(chapter => {
+          if (chapter.sections && Array.isArray(chapter.sections)) {
+            chapter.sections.forEach(section => {
+              if (section.videos && Array.isArray(section.videos)) {
+                section.videos.forEach(video => {
+                  allVideos.push(video);
+                });
+              }
+            });
+          }
+        });
+      }
+      if (allVideos.length === 0 && course.videos && Array.isArray(course.videos)) {
+        allVideos = course.videos;
+      }
+      allVideos.sort((a, b) => (a.order || 0) - (b.order || 0));
+      
+      // Check if current video is the last one
+      const currentIndex = allVideos.findIndex(v => String(v.id) === String(currentVideoId));
+      const isLast = currentIndex === allVideos.length - 1;
+      
+      if (isLast) {
+        // Get all progress
+        const contentIds = allVideos.map(v => v.id).filter(Boolean);
+        const progressResp = await axios.get(`/api/progress/course/${courseId}`);
+        const progressList = progressResp?.data?.progress || progressResp?.data?.data || [];
+        const progressMap = {};
+        progressList.forEach(p => {
+          if (p.videoId) progressMap[p.videoId] = p;
+        });
+        
+        // Check if all videos/files are completed
+        let allCompleted = true;
+        for (const video of allVideos) {
+          const progress = progressMap[video.id];
+          const isCompleted = progress && (progress.isCompleted || progress.watchPercentage >= 90);
+          if (!isCompleted) {
+            allCompleted = false;
+            break;
+          }
+        }
+        
+        // Check required quizzes
+        if (allCompleted) {
+          for (const video of allVideos) {
+            try {
+              const quizResp = await axios.get(`/api/quizzes/video/${video.id}`);
+              const quizInfo = quizResp?.data || {};
+              if (quizInfo.hasQuiz && quizInfo.isRequired && !quizInfo.passed) {
+                allCompleted = false;
+                break;
+              }
+            } catch (e) {
+              // ignore
+            }
+          }
+        }
+        
+        setCanCompleteCourse(allCompleted);
+      } else {
+        setCanCompleteCourse(false);
+      }
+    } catch (error) {
+      console.error('Error checking course completion status:', error);
+      setCanCompleteCourse(false);
+    }
+  };
+
+  const handleCompleteCourse = async () => {
+    if (!courseId) return;
+    
+    try {
+      setCompletingCourse(true);
+      const token = localStorage.getItem('token');
+      if (token) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const response = await axios.post(`/api/courses/${courseId}/complete`);
+      
+      if (response.data.success) {
+        setCourseCompleted(true);
+        setCompletionMessage('Tebrikler! Kursu tamamladınız.');
+        
+        // Redirect to my learnings after 5 seconds
+        setTimeout(() => {
+          navigate('/my-learnings');
+        }, 5000);
+      }
+    } catch (error) {
+      console.error('Error completing course:', error);
+      setCompletionMessage(error.response?.data?.message || 'Kurs tamamlanırken bir hata oluştu.');
+    } finally {
+      setCompletingCourse(false);
     }
   };
 
@@ -149,35 +277,64 @@ const QuizPlayer = () => {
           )}
         </Paper>
       )}
-      <Box sx={{ mt: 3, display: 'flex', gap: 2 }}>
-        <Button variant="outlined" onClick={() => navigate(-1)}>{t('quizPlayer.back')}</Button>
-        {error && videoId && (
-          <Button variant="contained" color="primary" onClick={() => navigate(`/video/${videoId}`)}>
-            {t('quizPlayer.goToVideo', 'Go to Video')}
-          </Button>
-        )}
-        {!result?.passed && (
-          <Button
-            variant="outlined"
-            color="secondary"
-            onClick={() => { startAttempt(); }}
-          >
-            {t('quizPlayer.retry')}
-          </Button>
-        )}
-        <Button variant="contained" color="primary" disabled={!result?.passed} onClick={() => {
-        if (!result?.passed) return;
-        if (nextVideoId) {
-          navigate(`/video/${nextVideoId}`);
-        } else if (courseId) {
-          navigate(`/course/${courseId}`);
-        } else {
-          navigate('/courses');
-        }
-        }}>
-          {t('quizPlayer.proceedNext')}
-        </Button>
-      </Box>
+      {courseCompleted ? (
+        <Box sx={{ mt: 3, textAlign: 'center' }}>
+          <Alert severity="success" sx={{ mb: 2 }}>
+            <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1 }}>
+              {completionMessage || 'Tebrikler! Kursu tamamladınız.'}
+            </Typography>
+            <Typography variant="body2">
+              5 saniye sonra My Learnings sayfasına yönlendirileceksiniz...
+            </Typography>
+          </Alert>
+        </Box>
+      ) : (
+        <Box sx={{ mt: 3, display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
+          <Button variant="outlined" onClick={() => navigate(-1)}>{t('quizPlayer.back')}</Button>
+          {error && videoId && (
+            <Button variant="contained" color="primary" onClick={() => navigate(`/video/${videoId}`)}>
+              {t('quizPlayer.goToVideo', 'Go to Video')}
+            </Button>
+          )}
+          {!result?.passed && (
+            <Button
+              variant="outlined"
+              color="secondary"
+              onClick={() => { startAttempt(); }}
+            >
+              {t('quizPlayer.retry')}
+            </Button>
+          )}
+          {result?.passed && canCompleteCourse && !nextVideoId ? (
+            <Button 
+              variant="contained" 
+              color="success" 
+              onClick={handleCompleteCourse}
+              disabled={completingCourse}
+            >
+              {completingCourse ? 'Tamamlanıyor...' : 'Kursu Tamamla'}
+            </Button>
+          ) : (
+            <Button 
+              variant="contained" 
+              color="primary" 
+              disabled={!result?.passed} 
+              onClick={() => {
+                if (!result?.passed) return;
+                if (nextVideoId) {
+                  navigate(`/video/${nextVideoId}`);
+                } else if (courseId) {
+                  navigate(`/course/${courseId}`);
+                } else {
+                  navigate('/courses');
+                }
+              }}
+            >
+              {t('quizPlayer.proceedNext')}
+            </Button>
+          )}
+        </Box>
+      )}
     </Container>
   );
 };

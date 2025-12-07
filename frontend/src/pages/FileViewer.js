@@ -13,7 +13,7 @@ import {
   Snackbar,
   Alert as MuiAlert
 } from '@mui/material';
-import { ArrowBack, SkipNext as NextIcon, InsertDriveFile as FileIcon } from '@mui/icons-material';
+import { ArrowBack, SkipNext as NextIcon, InsertDriveFile as FileIcon, CheckCircle as CheckIcon } from '@mui/icons-material';
 import axios from 'axios';
 import CourseSidebar from '../components/CourseSidebar';
 import { useTranslation } from 'react-i18next';
@@ -37,6 +37,11 @@ const FileViewer = () => {
   const [isEditingNotes, setIsEditingNotes] = useState(true);
   const [autoSaveNotes, setAutoSaveNotes] = useState(true);
   const [notesSavedOpen, setNotesSavedOpen] = useState(false);
+  const [isLastContent, setIsLastContent] = useState(false);
+  const [canCompleteCourse, setCanCompleteCourse] = useState(false);
+  const [completingCourse, setCompletingCourse] = useState(false);
+  const [courseCompleted, setCourseCompleted] = useState(false);
+  const [completionMessage, setCompletionMessage] = useState('');
 
   const resolveUrl = (url) => {
     if (!url) return url;
@@ -104,20 +109,119 @@ const FileViewer = () => {
     }
   };
 
+  // Check if current content is the last one and if course can be completed
+  const checkCourseCompletionStatus = async (courseId, currentVideoId) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (token) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      }
+      
+      // Get course data
+      const courseResp = await axios.get(`/api/courses/${courseId}`);
+      const course = courseResp?.data?.data;
+      
+      // Get all content items
+      const allItems = getOrderedItems(course);
+      if (allItems.length === 0) return;
+      
+      // Check if current item is the last one
+      const currentIndex = allItems.findIndex(item => String(item.id) === String(currentVideoId));
+      const isLast = currentIndex === allItems.length - 1;
+      setIsLastContent(isLast);
+      
+      if (isLast) {
+        // Check if all content is completed
+        const contentIds = allItems.map(item => item.id).filter(Boolean);
+        const progressResp = await axios.get(`/api/progress/course/${courseId}`);
+        const progressList = progressResp?.data?.progress || progressResp?.data?.data || [];
+        const progressMap = {};
+        progressList.forEach(p => {
+          if (p.videoId) progressMap[p.videoId] = p;
+        });
+        
+        // Check if all videos/files are completed
+        let allCompleted = true;
+        for (const item of allItems) {
+          const progress = progressMap[item.id];
+          const isCompleted = progress && (progress.isCompleted || progress.watchPercentage >= 90);
+          if (!isCompleted) {
+            allCompleted = false;
+            break;
+          }
+        }
+        
+        // Check required quizzes
+        if (allCompleted) {
+          for (const item of allItems) {
+            try {
+              const quizResp = await axios.get(`/api/quizzes/video/${item.id}`);
+              const quizInfo = quizResp?.data || {};
+              if (quizInfo.hasQuiz && quizInfo.isRequired && !quizInfo.passed) {
+                allCompleted = false;
+                break;
+              }
+            } catch (e) {
+              // ignore
+            }
+          }
+        }
+        
+        setCanCompleteCourse(allCompleted);
+      } else {
+        setCanCompleteCourse(false);
+      }
+    } catch (error) {
+      console.error('Error checking course completion status:', error);
+      setCanCompleteCourse(false);
+    }
+  };
+
+  // Helper function to determine if data represents a file (not a video)
+  const isFileType = (data) => {
+    if (!data) return false;
+    // Check type field first
+    if (data.type === 'file') return true;
+    // Check fileUrl path
+    const fileUrl = String(data.fileUrl || '');
+    if (/(\.pdf|\.pptx?|\/uploads\/files\/)/i.test(fileUrl)) return true;
+    // Check if it has videoVariants (videos have variants, files don't)
+    const hasVariants = data.videoVariants && Array.isArray(data.videoVariants) && data.videoVariants.length > 0;
+    if (hasVariants) return false;
+    // If fileUrl exists and doesn't point to videos directory, likely a file
+    if (fileUrl && !fileUrl.includes('/uploads/videos/')) return true;
+    return false;
+  };
+
   const loadData = async () => {
     try {
       setLoading(true);
       setError(null);
-      // Reset notes when switching content
+      // Reset all state when loading new content
+      setFileData(null);
+      setCourseData(null);
+      setNextItem(null);
       setNotes('');
       setLastNotesSavedAt(null);
       setIsEditingNotes(true);
+      
       const token = localStorage.getItem('token');
       if (token) {
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       }
       const resp = await axios.get(`/api/videos/${videoId}`);
       const vd = resp?.data?.data;
+      
+      // Verify this is actually a file, not a video
+      if (!isFileType(vd)) {
+        setError('This is not a file. Redirecting to video player...');
+        // Redirect to video player if it's actually a video
+        setTimeout(() => {
+          navigate(`/video/${videoId}${adminPreview ? '?adminPreview=1' : ''}`);
+        }, 1000);
+        return;
+      }
+      
       setFileData(vd);
       // Load existing notes for students
       try {
@@ -129,13 +233,24 @@ const FileViewer = () => {
         await fetchCourseData(vd.courseId);
       }
     } catch (err) {
+      console.error('Error loading file:', err);
       setError('Failed to load file.');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { loadData(); /* eslint-disable-next-line */ }, [videoId]);
+  useEffect(() => { 
+    loadData(); 
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoId, location.pathname]);
+
+  // Redirect to video player if fileData is actually a video (safety check)
+  useEffect(() => {
+    if (fileData && !isFileType(fileData)) {
+      navigate(`/video/${videoId}${adminPreview ? '?adminPreview=1' : ''}`);
+    }
+  }, [fileData, videoId, adminPreview, navigate]);
 
   const markCompletedAndNext = async () => {
     try {
@@ -150,9 +265,19 @@ const FileViewer = () => {
         watchPercentage: 100,
         watchedSegments: [{ start: 0, end: 1 }]
       });
+      
+      // Refresh completion status after marking as completed
+      if (fileData?.courseId) {
+        await checkCourseCompletionStatus(fileData.courseId, videoId);
+      }
     } catch {
       // ignore errors; still proceed
     } finally {
+      // If course can be completed, don't navigate - show complete button instead
+      if (canCompleteCourse && isLastContent) {
+        return;
+      }
+      
       // Compute next locally to avoid relying on async state
       const target = nextItem || computeNextItem(courseData, videoId, fileData);
       if (target) {
@@ -186,6 +311,35 @@ const FileViewer = () => {
       }
       // Last resort: go back to course
       if (fileData?.courseId) navigate(`/course/${fileData.courseId}${adminPreview ? '?adminPreview=1' : ''}`);
+    }
+  };
+
+  const handleCompleteCourse = async () => {
+    if (!fileData?.courseId) return;
+    
+    try {
+      setCompletingCourse(true);
+      const token = localStorage.getItem('token');
+      if (token) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const response = await axios.post(`/api/courses/${fileData.courseId}/complete`);
+      
+      if (response.data.success) {
+        setCourseCompleted(true);
+        setCompletionMessage('Tebrikler! Kursu tamamladınız.');
+        
+        // Redirect to my learnings after 5 seconds
+        setTimeout(() => {
+          navigate('/my-learnings');
+        }, 5000);
+      }
+    } catch (error) {
+      console.error('Error completing course:', error);
+      setCompletionMessage(error.response?.data?.message || 'Kurs tamamlanırken bir hata oluştu.');
+    } finally {
+      setCompletingCourse(false);
     }
   };
   const saveNotes = async () => {
@@ -230,6 +384,18 @@ const FileViewer = () => {
     );
   }
 
+  // Double-check that this is actually a file before rendering
+  const isActuallyFile = isFileType(fileData);
+  if (!isActuallyFile) {
+    // Show loading while redirect happens (useEffect will handle redirect)
+    return (
+      <Container maxWidth="lg" sx={{ mt: 4 }}>
+        <CircularProgress />
+        <Typography>Redirecting to video player...</Typography>
+      </Container>
+    );
+  }
+
   const viewerUrl = detectViewerUrl(fileData.fileUrl);
 
   return (
@@ -240,8 +406,12 @@ const FileViewer = () => {
         refreshKey={videoId}
         readonly={false}
         onVideoSelect={(video) => {
-          const isFile = video?.type === 'file' || (/(\.pdf|\/uploads\/files\/)/i.test(String(video?.fileUrl || '')));
-          navigate(isFile ? `/file/${video.id}` : `/video/${video.id}`);
+          // Use isFile property if provided, otherwise detect it
+          const isFile = video?.isFile !== undefined 
+            ? video.isFile 
+            : (video?.type === 'file' || /(\.pdf|\.pptx?|\/uploads\/files\/)/i.test(String(video?.fileUrl || '')));
+          const route = isFile ? '/file/' : '/video/';
+          navigate(`${route}${video.id}${adminPreview ? '?adminPreview=1' : ''}`);
         }}
       />
       <Box sx={{ flex: 1, overflow: 'auto' }}>
@@ -327,15 +497,43 @@ const FileViewer = () => {
           </Snackbar>
 
           <Box sx={{ textAlign: 'center', mb: 4 }}>
-            <Button
-              variant="contained"
-              size="large"
-              startIcon={<NextIcon />}
-              onClick={markCompletedAndNext}
-              sx={{ px: 4, py: 1.5, fontWeight: 'bold' }}
-            >
-              Next
-            </Button>
+            {courseCompleted ? (
+              <Box>
+                <Alert severity="success" sx={{ mb: 2 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1 }}>
+                    {completionMessage || 'Tebrikler! Kursu tamamladınız.'}
+                  </Typography>
+                  <Typography variant="body2">
+                    5 saniye sonra My Learnings sayfasına yönlendirileceksiniz...
+                  </Typography>
+                </Alert>
+              </Box>
+            ) : (
+              <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
+                {canCompleteCourse && isLastContent ? (
+                  <Button
+                    variant="contained"
+                    color="success"
+                    size="large"
+                    onClick={handleCompleteCourse}
+                    disabled={completingCourse}
+                    sx={{ px: 4, py: 1.5, fontWeight: 'bold' }}
+                  >
+                    {completingCourse ? 'Tamamlanıyor...' : 'Kursu Tamamla'}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="contained"
+                    size="large"
+                    startIcon={<NextIcon />}
+                    onClick={markCompletedAndNext}
+                    sx={{ px: 4, py: 1.5, fontWeight: 'bold' }}
+                  >
+                    Next
+                  </Button>
+                )}
+              </Box>
+            )}
           </Box>
         </Container>
       </Box>

@@ -31,18 +31,18 @@ import { useTranslation } from 'react-i18next';
 const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey, readonly = false }) => {
   const { user } = useAuth();
   const isTeacher = user && (user.role === 'teacher' || user.role === 'admin');
-  // Check if user owns the course (is the teacher/admin who created it) or is an admin
-  // Admins can access all courses, teachers can access their own courses
-  const isCourseOwner = courseData && user && (
-    courseData.teacherId === user.id || 
-    user.role === 'admin'
-  );
+  // Check if user owns the course (is the teacher/admin who created it)
+  // Only the actual course owner should bypass sequential locking
+  const isCourseOwner = courseData && user && (courseData.teacherId === user.id);
   const navigate = useNavigate();
   const { courseId } = useParams();
   const location = useLocation();
   const { t } = useTranslation();
   // Check for adminPreview flag in URL (for admin preview mode)
+  // Admin preview mode allows admins to preview courses without restrictions
   const adminPreview = new URLSearchParams(location.search).get('adminPreview') === '1';
+  // Only course owners or admin preview mode can access all content without sequential locking
+  // Regular admins (who are not course owners) should follow sequential locking like students
   const canAccessAll = isCourseOwner || adminPreview;
   const [expandedChapters, setExpandedChapters] = useState({});
   const [videoProgress, setVideoProgress] = useState({});
@@ -191,13 +191,30 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey, 
     }));
   };
 
+  // Helper function to detect if a video is actually a file
+  const detectFileType = (video) => {
+    if (!video) return false;
+    // Check type field first
+    if (video.type === 'file') return true;
+    // Check fileUrl path patterns
+    const fileUrl = String(video.fileUrl || '');
+    if (/(\.pdf|\.pptx?|\/uploads\/files\/)/i.test(fileUrl)) return true;
+    // Check if it has videoVariants (videos have variants, files typically don't)
+    const hasVariants = video.videoVariants && Array.isArray(video.videoVariants) && video.videoVariants.length > 0;
+    if (hasVariants) return false;
+    // If fileUrl exists and doesn't point to videos directory, likely a file
+    if (fileUrl && !fileUrl.includes('/uploads/videos/') && fileUrl.includes('/uploads/')) return true;
+    return false;
+  };
+
   const handleVideoClick = (video) => {
+    const realId = resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id;
+    const isFile = detectFileType(video);
+    
     if (onVideoSelect) {
-      const realId = resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id;
-      onVideoSelect({ ...video, id: realId });
+      // Pass file type information to the callback
+      onVideoSelect({ ...video, id: realId, isFile });
     } else {
-      const realId = resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id;
-      const isFile = (video?.type === 'file') || /(\.pdf|\.pptx?|\/uploads\/files\/)/i.test(String(video?.fileUrl || ''));
       navigate(isFile ? `/file/${realId}` : `/video/${realId}`);
     }
   };

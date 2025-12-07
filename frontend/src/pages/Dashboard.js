@@ -100,34 +100,41 @@ const Dashboard = () => {
 
           // Update course with progress
           course.progress = courseProgress;
-          // Determine course completion: all videos/files completed AND all required quizzes passed
-          let allVideosCompleted = Array.isArray(course.videos) && course.videos.length > 0
-            ? course.videos.every(v => {
-                const p = progressByVideoId.get(v.id);
-                return p && (Boolean(p.isCompleted) || Number(p.watchPercentage || 0) >= 90);
-              })
-            : false;
-          let allRequiredQuizzesPassed = true;
-          try {
-            if (Array.isArray(course.videos) && course.videos.length > 0) {
-              const quizChecks = await Promise.all(course.videos.map(async (v) => {
-                try {
-                  const resp = await axios.get(`/api/quizzes/video/${v.id}`);
-                  const info = resp?.data || {};
-                  if (info.hasQuiz && info.isRequired) {
-                    return Boolean(info.passed);
+          // Check if course is completed from enrollment (completedAt field)
+          // If completedAt exists, course is completed regardless of content status
+          if (course.completedAt || course.isCompleted) {
+            course.completed = true;
+            completedCoursesCount++;
+          } else {
+            // Determine course completion: all videos/files completed AND all required quizzes passed
+            let allVideosCompleted = Array.isArray(course.videos) && course.videos.length > 0
+              ? course.videos.every(v => {
+                  const p = progressByVideoId.get(v.id);
+                  return p && (Boolean(p.isCompleted) || Number(p.watchPercentage || 0) >= 90);
+                })
+              : false;
+            let allRequiredQuizzesPassed = true;
+            try {
+              if (Array.isArray(course.videos) && course.videos.length > 0) {
+                const quizChecks = await Promise.all(course.videos.map(async (v) => {
+                  try {
+                    const resp = await axios.get(`/api/quizzes/video/${v.id}`);
+                    const info = resp?.data || {};
+                    if (info.hasQuiz && info.isRequired) {
+                      return Boolean(info.passed);
+                    }
+                    return true;
+                  } catch {
+                    // if failed to fetch quiz info, don't block completion
+                    return true;
                   }
-                  return true;
-                } catch {
-                  // if failed to fetch quiz info, don't block completion
-                  return true;
-                }
-              }));
-              allRequiredQuizzesPassed = quizChecks.every(Boolean);
-            }
-          } catch {}
-          course.completed = Boolean(allVideosCompleted && allRequiredQuizzesPassed);
-          if (course.completed) completedCoursesCount++;
+                }));
+                allRequiredQuizzesPassed = quizChecks.every(Boolean);
+              }
+            } catch {}
+            course.completed = Boolean(allVideosCompleted && allRequiredQuizzesPassed);
+            if (course.completed) completedCoursesCount++;
+          }
         } catch (error) {
           console.error(`Error fetching progress for course ${course.id}:`, error);
           course.progress = 0;

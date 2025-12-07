@@ -598,7 +598,7 @@ const TeacherDashboard = () => {
                             <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
                               {student.progress || 0}%
                             </Typography>
-                            {Math.round(Number(student.progress || 0)) >= 100 && (
+                            {(student.isCompleted || Math.round(Number(student.progress || 0)) >= 100) && (
                               <Chip size="small" color="success" label="Completed" />
                             )}
                           </Box>
@@ -783,7 +783,7 @@ const TeacherDashboard = () => {
                                                 <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
                                                   {Math.round(Number(st.progress || 0))}%
                                                 </Typography>
-                                                {Math.round(Number(st.progress || 0)) >= 100 && (
+                                                {(st.isCompleted || Math.round(Number(st.progress || 0)) >= 100) && (
                                                   <Chip size="small" color="success" label="Completed" />
                                                 )}
                                               </Box>

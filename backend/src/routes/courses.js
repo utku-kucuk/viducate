@@ -13,7 +13,8 @@ const {
   createCourse,
   updateCourse,
   deleteCourse,
-  getCourseById
+  getCourseById,
+  completeCourse
 } = require('../controllers/courseController');
 const { body } = require('express-validator');
 
@@ -44,6 +45,7 @@ router.get('/:id', auth, getCourseById);
 // Enrollment routes
 router.post('/:courseId/enroll', auth, enrollInCourse);
 router.delete('/:courseId/enroll', auth, unenrollFromCourse);
+router.post('/:courseId/complete', auth, completeCourse);
 
 // Teacher routes
 router.get('/teacher/my-courses', auth, requireTeacher, getTeacherCourses);

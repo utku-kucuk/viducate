@@ -1,5 +1,5 @@
 const { sequelize } = require('../config/database');
-const { Course, User, Video, UserCourse, Progress } = require('../models');
+const { Course, User, Video, UserCourse, Progress, Quiz, QuizAttempt } = require('../models');
 const { validationResult } = require('express-validator');
 
 // Get all courses (for students)
@@ -133,7 +133,9 @@ const getTeacherStudents = async (req, res) => {
       courseId: enrollment.course.id,
       courseTitle: enrollment.course.title,
       enrolledAt: enrollment.enrolledAt,
-      progress: enrollment.progress || 0
+      progress: enrollment.progress || 0,
+      completedAt: enrollment.completedAt,
+      isCompleted: !!enrollment.completedAt
     }));
 
     res.json({
@@ -159,7 +161,9 @@ const getEnrolledCourses = async (req, res) => {
           as: 'students',
           where: { id: req.user.id },
           attributes: [],
-          through: { attributes: [] }
+          through: { 
+            attributes: ['completedAt', 'progress', 'enrolledAt']
+          }
         },
         {
           model: User,
@@ -175,9 +179,24 @@ const getEnrolledCourses = async (req, res) => {
       order: [['createdAt', 'DESC']]
     });
 
+    // Add enrollment info (completedAt, progress) to each course
+    const coursesWithEnrollment = await Promise.all(enrolledCourses.map(async (course) => {
+      const enrollment = await UserCourse.findOne({
+        where: { userId: req.user.id, courseId: course.id }
+      });
+      
+      const courseData = course.toJSON();
+      if (enrollment) {
+        courseData.completedAt = enrollment.completedAt;
+        courseData.enrollmentProgress = enrollment.progress || 0;
+        courseData.isCompleted = !!enrollment.completedAt;
+      }
+      return courseData;
+    }));
+
     res.json({
       success: true,
-      data: enrolledCourses
+      data: coursesWithEnrollment
     });
   } catch (error) {
     console.error('Error fetching enrolled courses:', error);
@@ -585,6 +604,18 @@ const getCourseById = async (req, res) => {
     // Only reflect real enrollment; adminPreview does not equal enrollment
     courseData.isEnrolled = !!isEnrolled;
     
+    // Add completion status if enrolled
+    if (isEnrolled) {
+      const enrollment = await UserCourse.findOne({
+        where: { userId, courseId: id }
+      });
+      if (enrollment) {
+        courseData.completedAt = enrollment.completedAt;
+        courseData.isCompleted = !!enrollment.completedAt;
+        courseData.enrollmentProgress = enrollment.progress || 0;
+      }
+    }
+    
     // Ensure chapters are properly parsed if they exist
     if (courseData.chapters && typeof courseData.chapters === 'string') {
       try {
@@ -691,6 +722,156 @@ const getCourseById = async (req, res) => {
   }
 };
 
+// Complete a course (mark as completed)
+const completeCourse = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const userId = req.user.id;
+
+    // Check if user is enrolled
+    const enrollment = await UserCourse.findOne({
+      where: { userId, courseId }
+    });
+
+    if (!enrollment) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not enrolled in this course'
+      });
+    }
+
+    // Check if already completed
+    if (enrollment.completedAt) {
+      return res.json({
+        success: true,
+        message: 'Course already completed',
+        data: { completedAt: enrollment.completedAt }
+      });
+    }
+
+    // Get course to check all content
+    const course = await Course.findByPk(courseId, {
+      include: [
+        {
+          model: Video,
+          as: 'videos',
+          attributes: ['id', 'title', 'fileUrl', 'type']
+        }
+      ]
+    });
+
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course not found'
+      });
+    }
+
+    // Get all videos/files in the course (from chapters or videos list)
+    let allContent = [];
+    if (course.chapters && Array.isArray(course.chapters)) {
+      course.chapters.forEach(chapter => {
+        if (chapter.sections && Array.isArray(chapter.sections)) {
+          chapter.sections.forEach(section => {
+            if (section.videos && Array.isArray(section.videos)) {
+              section.videos.forEach(video => {
+                allContent.push(video);
+              });
+            }
+          });
+        }
+      });
+    }
+    if (allContent.length === 0 && course.videos && Array.isArray(course.videos)) {
+      allContent = course.videos;
+    }
+
+    // Check if all content is completed
+    const contentIds = allContent.map(v => v.id).filter(Boolean);
+    if (contentIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Course has no content'
+      });
+    }
+
+    // Get all progress for this course
+    const allProgress = await Progress.findAll({
+      where: {
+        userId,
+        videoId: contentIds
+      }
+    });
+
+    const progressMap = new Map();
+    allProgress.forEach(p => {
+      progressMap.set(p.videoId, p);
+    });
+
+    // Check if all videos/files are completed
+    let allCompleted = true;
+    for (const content of allContent) {
+      const progress = progressMap.get(content.id);
+      const isCompleted = progress && (progress.isCompleted || progress.watchPercentage >= 90);
+      if (!isCompleted) {
+        allCompleted = false;
+        break;
+      }
+    }
+
+    // Check required quizzes
+    if (allCompleted) {
+      const quizzes = await Quiz.findAll({
+        where: { videoId: contentIds, isRequired: true }
+      });
+
+      for (const quiz of quizzes) {
+        const attempt = await QuizAttempt.findOne({
+          where: {
+            userId,
+            quizId: quiz.id,
+            passed: true
+          },
+          order: [['createdAt', 'DESC']]
+        });
+
+        if (!attempt) {
+          allCompleted = false;
+          break;
+        }
+      }
+    }
+
+    if (!allCompleted) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please complete all course content before completing the course'
+      });
+    }
+
+    // Mark course as completed
+    enrollment.completedAt = new Date();
+    enrollment.progress = 100;
+    await enrollment.save();
+
+    res.json({
+      success: true,
+      message: 'Course completed successfully',
+      data: {
+        completedAt: enrollment.completedAt,
+        progress: 100
+      }
+    });
+  } catch (error) {
+    console.error('Error completing course:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to complete course',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   getAllCourses,
   getTeacherCourses,
@@ -701,5 +882,6 @@ module.exports = {
   createCourse,
   updateCourse,
   deleteCourse,
-  getCourseById
+  getCourseById,
+  completeCourse
 };
