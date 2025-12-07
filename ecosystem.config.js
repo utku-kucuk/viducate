@@ -8,13 +8,17 @@ module.exports = {
       autorestart: true,
       watch: false,
       max_memory_restart: '1G',
+      min_uptime: '10s',
+      max_restarts: 10,
       env: {
         NODE_ENV: 'production',
         PORT: 8080
       },
       error_file: '/home/pi/logs/viducate-backend-error.log',
       out_file: '/home/pi/logs/viducate-backend-out.log',
-      log_file: '/home/pi/logs/viducate-backend.log'
+      log_file: '/home/pi/logs/viducate-backend.log',
+      merge_logs: true,
+      time: true
     }
   ]
 };
