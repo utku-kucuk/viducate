@@ -621,6 +621,9 @@ const VideoPlayer = () => {
   const handleVideoLoad = (event) => {
     const video = event.target || videoRef.current;
     if (!video) return;
+    // Reset retry count when video loads successfully
+    retryCountRef.current = 0;
+    lastStallTimeRef.current = 0;
     setDuration(video.duration || (player?.duration ? player.duration() : 0));
     setCurrentTime(video.currentTime || 0);
     setPlayer(video);
@@ -704,6 +707,124 @@ const VideoPlayer = () => {
   const handleVideoSeeked = (event) => {
     const t = event?.target?.currentTime || (videoRef.current ? videoRef.current.currentTime : 0) || 0;
     sessionStartRef.current = t || 0;
+  };
+
+  // Handle video buffering/waiting
+  const handleVideoWaiting = (event) => {
+    const video = event.target || videoRef.current;
+    if (!video) return;
+    // Video is buffering - pause playback until enough data is loaded
+    if (isPlaying && video.paused === false) {
+      // Don't pause, let browser handle buffering naturally
+      // But we can show a loading indicator if needed
+      console.log('Video buffering at:', video.currentTime);
+    }
+  };
+
+  // Track retry attempts to prevent infinite loops
+  const retryCountRef = useRef(0);
+  const lastStallTimeRef = useRef(0);
+
+  // Handle video stalled (network issue)
+  const handleVideoStalled = (event) => {
+    const video = event.target || videoRef.current;
+    if (!video) return;
+    const now = Date.now();
+    const timeSinceLastStall = now - lastStallTimeRef.current;
+    lastStallTimeRef.current = now;
+    
+    console.warn('Video stalled at:', video.currentTime, 'Network state:', video.networkState);
+    
+    // Only retry if stalled for more than 3 seconds and haven't retried too many times
+    if (timeSinceLastStall > 3000 && retryCountRef.current < 3) {
+      retryCountRef.current++;
+      const currentTime = video.currentTime;
+      const currentSrc = video.src;
+      
+      // Try to reload the video
+      console.log(`Retrying video load (attempt ${retryCountRef.current})...`);
+      video.load();
+      
+      // Try to resume from where we were
+      setTimeout(() => {
+        if (videoRef.current && !isNaN(currentTime)) {
+          try {
+            videoRef.current.currentTime = currentTime;
+            if (isPlaying) {
+              videoRef.current.play().catch(err => {
+                console.warn('Failed to resume playback after retry:', err);
+              });
+            }
+          } catch (e) {
+            console.warn('Failed to seek after retry:', e);
+          }
+        }
+      }, 500);
+    } else if (retryCountRef.current >= 3) {
+      setError('Video loading failed. Please refresh the page or try a different quality.');
+    }
+  };
+
+  // Handle video error
+  const handleVideoError = (event) => {
+    const video = event.target || videoRef.current;
+    if (!video) return;
+    const error = video.error;
+    if (error) {
+      let errorMsg = 'Video playback error';
+      switch (error.code) {
+        case error.MEDIA_ERR_ABORTED:
+          errorMsg = 'Video loading aborted';
+          break;
+        case error.MEDIA_ERR_NETWORK:
+          errorMsg = 'Network error while loading video';
+          // Try to reload
+          if (currentVideoUrl) {
+            setTimeout(() => {
+              if (videoRef.current) {
+                videoRef.current.load();
+              }
+            }, 2000);
+          }
+          break;
+        case error.MEDIA_ERR_DECODE:
+          errorMsg = 'Video decoding error';
+          break;
+        case error.MEDIA_ERR_SRC_NOT_SUPPORTED:
+          errorMsg = 'Video format not supported';
+          break;
+      }
+      console.error('Video error:', errorMsg, error);
+      setError(errorMsg);
+    }
+  };
+
+  // Handle video can play (enough data loaded to start)
+  const handleVideoCanPlay = (event) => {
+    const video = event.target || videoRef.current;
+    if (!video) return;
+    // Video is ready to play - ensure it can continue
+    if (isPlaying && video.paused) {
+      video.play().catch(err => {
+        console.warn('Auto-play prevented:', err);
+      });
+    }
+  };
+
+  // Handle video progress (buffering progress)
+  const handleVideoProgress = (event) => {
+    const video = event.target || videoRef.current;
+    if (!video) return;
+    // Check buffered ranges
+    if (video.buffered && video.buffered.length > 0) {
+      const bufferedEnd = video.buffered.end(video.buffered.length - 1);
+      const currentTime = video.currentTime || 0;
+      // If we're close to the end of buffered data, we might stall soon
+      if (bufferedEnd - currentTime < 3 && isPlaying) {
+        // Less than 3 seconds buffered - might need to preload more
+        console.log('Low buffer warning:', bufferedEnd - currentTime, 'seconds remaining');
+      }
+    }
   };
 
   // Explicitly finalize then go to next video
@@ -946,7 +1067,7 @@ const VideoPlayer = () => {
                 className="native-player"
                 controls
                 playsInline
-                preload="metadata"
+                preload="auto"
                 src={currentVideoUrl || ''}
                 style={{ width: '100%', height: 'auto', maxHeight: '70vh' }}
                 onLoadedMetadata={handleVideoLoad}
@@ -956,6 +1077,11 @@ const VideoPlayer = () => {
                 onEnded={handleVideoEnded}
                 onSeeking={handleVideoSeeking}
                 onSeeked={handleVideoSeeked}
+                onWaiting={handleVideoWaiting}
+                onStalled={handleVideoStalled}
+                onError={handleVideoError}
+                onCanPlay={handleVideoCanPlay}
+                onProgress={handleVideoProgress}
               />
 
               {/* In-player Quality Menu Overlay */}

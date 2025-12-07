@@ -96,6 +96,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Static files for uploads
 // Allow embedding uploaded files in iframes from frontend dev origin (to preview PDFs/PPTX)
+// CRITICAL: Enable range requests for video streaming to prevent freezing
 app.use('/uploads', (req, res, next) => {
   const isProd = process.env.NODE_ENV === 'production';
   if (!isProd) {
@@ -106,8 +107,38 @@ app.use('/uploads', (req, res, next) => {
       "frame-ancestors 'self' http://localhost:3000 http://127.0.0.1:3000"
     );
   }
+  
+  // Enable range requests for video files (critical for streaming)
+  // This allows browsers to request specific byte ranges, preventing freezing
+  if (req.path.match(/\.(mp4|webm|avi|mov|wmv|flv|mkv)$/i)) {
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+  }
+  
   next();
-}, express.static('uploads'));
+}, express.static('uploads', {
+  // Enable range requests for video streaming
+  setHeaders: (res, path) => {
+    if (path.match(/\.(mp4|webm|avi|mov|wmv|flv|mkv)$/i)) {
+      res.setHeader('Accept-Ranges', 'bytes');
+      // Set appropriate Content-Type based on file extension
+      const ext = path.toLowerCase().split('.').pop();
+      const mimeTypes = {
+        'mp4': 'video/mp4',
+        'webm': 'video/webm',
+        'avi': 'video/x-msvideo',
+        'mov': 'video/quicktime',
+        'wmv': 'video/x-ms-wmv',
+        'flv': 'video/x-flv',
+        'mkv': 'video/x-matroska'
+      };
+      if (mimeTypes[ext]) {
+        res.setHeader('Content-Type', mimeTypes[ext]);
+      }
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+    }
+  }
+}));
 
 // Handle preflight requests
 app.options('*', cors());

@@ -305,67 +305,78 @@ const CourseDetail = () => {
     // This ensures that even if the same video appears multiple times,
     // each occurrence is checked based on its position in the sequence
     let index = -1;
-    if (videoObj && typeof videoObj._originalIndex === 'number') {
-      // Find by original index first (handles duplicate titles and duplicate videos)
+    
+    // PRIORITY 1: Match by position (chapter/section/video index) - MOST RELIABLE for duplicate videos
+    if (videoObj && typeof videoObj._chapterIndex === 'number' && typeof videoObj._sectionIndex === 'number' && typeof videoObj._videoIndex === 'number') {
+      index = resolvedVideos.findIndex(v => 
+        typeof v._chapterIndex === 'number' &&
+        typeof v._sectionIndex === 'number' &&
+        typeof v._videoIndex === 'number' &&
+        v._chapterIndex === videoObj._chapterIndex &&
+        v._sectionIndex === videoObj._sectionIndex &&
+        v._videoIndex === videoObj._videoIndex
+      );
+    }
+    
+    // PRIORITY 2: Match by original index (handles duplicate titles)
+    if (index === -1 && videoObj && typeof videoObj._originalIndex === 'number') {
       index = resolvedVideos.findIndex(v => v._originalIndex === videoObj._originalIndex);
     }
-    // If not found by original index, find by matching position (chapter/section/video index)
-    if (index === -1 && videoObj) {
-      // Match by position first (most reliable for duplicate videos)
-      if (typeof videoObj._chapterIndex === 'number' && typeof videoObj._sectionIndex === 'number' && typeof videoObj._videoIndex === 'number') {
-        index = resolvedVideos.findIndex(v => 
-          v._chapterIndex === videoObj._chapterIndex &&
-          v._sectionIndex === videoObj._sectionIndex &&
-          v._videoIndex === videoObj._videoIndex
-        );
-      }
-    }
-    // If still not found, try matching by ID and title
-    if (index === -1 && videoObj) {
-      const videoTitle = videoObj.title || '';
-      const videoOrder = videoObj.order;
-      index = resolvedVideos.findIndex((v, idx) => {
-        const vResolvedId = resolveVideoId(v) || v.id;
-        const matchesId = String(vResolvedId) === String(videoId);
-        const matchesTitle = v.title === videoTitle;
-        // If order is available, use it to distinguish duplicates
-        if (typeof videoOrder === 'number' && typeof v.order === 'number') {
-          return matchesId && matchesTitle && v.order === videoOrder;
-        }
-        // Otherwise match by ID and title
-        return matchesId && matchesTitle;
-      });
-    }
-    // Last resort: find by ID only (but this may match wrong position if video appears multiple times)
+    
+    // PRIORITY 3: If position info not available, we CANNOT reliably find the correct video
+    // when duplicates exist. In this case, we must fail to prevent wrong video access.
+    // Only allow ID-based matching if we're certain there are no duplicates
     if (index === -1) {
+      // Count how many videos have the same ID
+      const sameIdCount = resolvedVideos.filter(v => String(v.resolvedId) === String(videoId)).length;
+      if (sameIdCount > 1) {
+        // Multiple videos with same ID exist - cannot determine correct position without position info
+        console.warn('Cannot determine video position: multiple videos with same ID exist and position info not available');
+        return false; // Lock it to be safe
+      }
+      // Only one video with this ID exists, safe to match by ID
       index = resolvedVideos.findIndex(v => String(v.resolvedId) === String(videoId));
     }
+    
     if (index === -1) return false; // Video not found in course
     
     // First video (index 0) is always unlocked for enrolled users
     if (index === 0) return true;
     
     // CRITICAL: Check completion based on POSITION in sequence, not video ID
-    // Even if the same video appears at position 0 and position 2,
-    // we need to check if videos at positions 0 AND 1 are completed before unlocking position 2
-    let prefixCompleted = 0;
-    for (let i = 0; i < resolvedVideos.length; i++) {
+    // Even if the same video appears at position 0 and position 3,
+    // we need to check if videos at positions 0, 1, AND 2 are completed before unlocking position 3
+    // Each position must be completed independently, regardless of video ID
+    
+    // Check ALL videos before the requested position
+    // We need to verify that every single video from index 0 to index-1 is completed
+    // IMPORTANT: Even if the same video ID appears at multiple positions,
+    // we must check each position independently based on its position in the sequence
+    for (let i = 0; i < index; i++) {
       const v = resolvedVideos[i];
-      // For each video at position i, check if it's completed
-      // Use the video's resolved ID to check progress
+      if (!v || !v.resolvedId) {
+        // If video at position i is invalid, consider it incomplete
+        return false;
+      }
+      
+      // Check progress for this specific video at this specific position
+      // NOTE: If the same video ID appears at multiple positions, we check progress
+      // for that video ID. But we still require ALL previous positions to be completed
+      // in sequence, regardless of video ID.
       const p = userProgress[String(v.resolvedId)];
       const completed = !!(p?.isCompleted || (p?.watchPercentage >= 90));
-      if (completed) {
-        prefixCompleted++;
-      } else {
-        // Stop at first incomplete video - sequential locking
-        break;
+      
+      if (!completed) {
+        // If ANY video before the requested position is not completed, lock it
+        // This ensures strict sequential progression, even for duplicate videos
+        return false;
       }
     }
     
-    // Unlock only if ALL previous videos (by position) are completed
-    // This ensures that even duplicate videos must be completed in sequence
-    return index <= prefixCompleted;
+    // All previous videos (by position) are completed, unlock this video
+    // This ensures that even if the same video appears at position 0 and position 3,
+    // position 3 is only unlocked after positions 0, 1, and 2 are all completed
+    return true;
   };
 
 
@@ -683,8 +694,9 @@ const CourseDetail = () => {
                                             // First video is always unlocked for enrolled users, even if resolvedVideoId is undefined
                                             // Find video in flatVideos by matching position (chapter/section/video index)
                                             // This ensures we get the correct video even if same video appears multiple times
+                                            // CRITICAL: Must match by position to handle duplicate videos correctly
                                             const videoInFlat = flatVideos.find((v, idx) => {
-                                              // Match by position first (most reliable for duplicate videos)
+                                              // PRIORITY 1: Match by position (most reliable for duplicate videos)
                                               if (typeof v._chapterIndex === 'number' && typeof v._sectionIndex === 'number' && typeof v._videoIndex === 'number') {
                                                 if (v._chapterIndex === chapterIndex && 
                                                     v._sectionIndex === sectionIndex && 
@@ -692,15 +704,9 @@ const CourseDetail = () => {
                                                   return true;
                                                 }
                                               }
-                                              // Fallback: match by resolved ID and title
-                                              if (resolvedVideoId) {
-                                                const vResolvedId = resolveVideoId(v) || v.id;
-                                                if (String(vResolvedId) === String(resolvedVideoId) && v.title === video.title) {
-                                                  return true;
-                                                }
-                                              }
-                                              // Last resort: match by title only
-                                              return v.title === video.title;
+                                              // If position info not available in flatVideos, cannot reliably match
+                                              // Don't use fallback matching for duplicate videos
+                                              return false;
                                             });
                                             // Use the found video from flatVideos (has position info) or create one with position info
                                             const videoForUnlock = videoInFlat || { 
@@ -757,8 +763,9 @@ const CourseDetail = () => {
                                                 const baseLocked = !isTeacher && !isEnrolled;
                                                 // Find video in flatVideos by matching position (chapter/section/video index)
                                                 // This ensures we get the correct video even if same video appears multiple times
+                                                // CRITICAL: Must match by position to handle duplicate videos correctly
                                                 const videoInFlatForQuiz = flatVideos.find((v, idx) => {
-                                                  // Match by position first (most reliable for duplicate videos)
+                                                  // PRIORITY 1: Match by position (most reliable for duplicate videos)
                                                   if (typeof v._chapterIndex === 'number' && typeof v._sectionIndex === 'number' && typeof v._videoIndex === 'number') {
                                                     if (v._chapterIndex === chapterIndex && 
                                                         v._sectionIndex === sectionIndex && 
@@ -766,15 +773,9 @@ const CourseDetail = () => {
                                                       return true;
                                                     }
                                                   }
-                                                  // Fallback: match by resolved ID and title
-                                                  if (resolvedVideoId) {
-                                                    const vResolvedId = resolveVideoId(v) || v.id;
-                                                    if (String(vResolvedId) === String(resolvedVideoId) && v.title === video.title) {
-                                                      return true;
-                                                    }
-                                                  }
-                                                  // Last resort: match by title only
-                                                  return v.title === video.title;
+                                                  // If position info not available in flatVideos, cannot reliably match
+                                                  // Don't use fallback matching for duplicate videos
+                                                  return false;
                                                 });
                                                 // Use the found video from flatVideos (has position info) or create one with position info
                                                 const videoForUnlockQuiz = videoInFlatForQuiz || { 
