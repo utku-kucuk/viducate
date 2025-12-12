@@ -60,7 +60,9 @@ echo -e "${YELLOW}🔧 Setting up Environment...${NC}"
 if [ ! -f backend/.env ]; then
     if [ -f backend/env.production ]; then
         cp backend/env.production backend/.env
-        echo -e "${YELLOW}⚠️  Created backend/.env from default. PLEASE EDIT IT!${NC}"
+        # Replace hardcoded paths with actual project directory
+        sed -i "s|/home/pi/viducate|$PROJECT_DIR|g" backend/.env
+        echo -e "${YELLOW}⚠️  Created backend/.env from default and updated paths to $PROJECT_DIR.${NC}"
     else
         echo -e "${RED}❌ backend/env.production not found!${NC}"
         exit 1

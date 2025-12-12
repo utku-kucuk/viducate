@@ -21,24 +21,32 @@ const storage = multer.diskStorage({
   }
 });
 
+const getMaxSize = () => {
+  const size = process.env.MAX_FILE_SIZE || '500MB';
+  if (typeof size === 'number') return size;
+  const str = size.toString().toUpperCase();
+  if (str.endsWith('GB')) return parseFloat(str) * 1024 * 1024 * 1024;
+  if (str.endsWith('MB')) return parseFloat(str) * 1024 * 1024;
+  return 500 * 1024 * 1024;
+};
+
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 500 * 1024 * 1024, // 500MB limit
-  },
-  fileFilter: (req, file, cb) => {
-    // Check file type
-    const allowedTypes = /mp4|avi|mov|wmv|flv|webm|mkv/;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
+    fileSize: getMaxSize(),
+    fileFilter: (req, file, cb) => {
+      // Check file type
+      const allowedTypes = /mp4|avi|mov|wmv|flv|webm|mkv/;
+      const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+      const mimetype = allowedTypes.test(file.mimetype);
 
-    if (mimetype && extname) {
-      return cb(null, true);
-    } else {
-      cb(new Error('Only video files are allowed!'));
+      if (mimetype && extname) {
+        return cb(null, true);
+      } else {
+        cb(new Error('Only video files are allowed!'));
+      }
     }
-  }
-}).single('video');
+  }).single('video');
 
 // Get videos by course
 const getVideosByCourse = async (req, res) => {
@@ -76,8 +84,8 @@ const getVideosByCourse = async (req, res) => {
         const videoData = video.toJSON();
         videoData.availableQualities = video.getAvailableQualities();
         videoData.selectedUrl = video.getVideoUrl(quality || null) || videoData.fileUrl;
-        videoData.currentQuality = quality || (videoData.availableQualities.length > 0 
-          ? videoData.availableQualities[videoData.availableQualities.length - 1] 
+        videoData.currentQuality = quality || (videoData.availableQualities.length > 0
+          ? videoData.availableQualities[videoData.availableQualities.length - 1]
           : videoData.quality || null);
         // Ensure fileUrl is always present for backward compatibility
         if (!videoData.selectedUrl && videoData.fileUrl) {
@@ -170,7 +178,7 @@ const getVideoById = async (req, res) => {
 
     // Prepare video data with resolution support
     const videoData = video.toJSON();
-    
+
     try {
       // Ensure videoVariants is properly parsed and included
       // First try to get from model instance (uses getter)
@@ -189,7 +197,7 @@ const getVideoById = async (req, res) => {
         console.warn('Error getting videoVariants from model:', e.message);
         variants = [];
       }
-      
+
       // If still empty, try from videoData
       if (variants.length === 0 && videoData.videoVariants) {
         if (Array.isArray(videoData.videoVariants)) {
@@ -202,31 +210,31 @@ const getVideoById = async (req, res) => {
           }
         }
       }
-      
+
       videoData.videoVariants = variants;
       console.log('Processed videoVariants:', variants.length, 'variants');
-      
+
       // Add availableQualities and selectedUrl
       videoData.availableQualities = video.getAvailableQualities();
       console.log('Available qualities from model:', videoData.availableQualities);
-      
+
       // If no qualities from model, extract from variants
       if (videoData.availableQualities.length === 0 && variants.length > 0) {
         videoData.availableQualities = variants.map(v => v.quality || v).filter(Boolean);
         console.log('Extracted qualities from variants:', videoData.availableQualities);
       }
-      
+
       // If quality specified, use it; otherwise use default
       videoData.selectedUrl = video.getVideoUrl(quality || null) || videoData.fileUrl;
-      videoData.currentQuality = quality || (videoData.availableQualities.length > 0 
-        ? videoData.availableQualities[videoData.availableQualities.length - 1] 
+      videoData.currentQuality = quality || (videoData.availableQualities.length > 0
+        ? videoData.availableQualities[videoData.availableQualities.length - 1]
         : videoData.quality || null);
-      
+
       // Ensure fileUrl is always present for backward compatibility
       if (!videoData.selectedUrl && videoData.fileUrl) {
         videoData.selectedUrl = videoData.fileUrl;
       }
-      
+
       console.log('Final video data:', {
         availableQualities: videoData.availableQualities.length,
         videoVariants: videoData.videoVariants.length,
@@ -305,7 +313,7 @@ const uploadVideo = async (req, res) => {
       // Create video record with initial variant (single upload creates one variant)
       // videoVariants can be added later when multiple resolutions are processed
       const fileUrl = `/uploads/videos/${req.file.filename}`;
-      
+
       // Prepare video data
       const videoData = {
         title,
@@ -324,7 +332,7 @@ const uploadVideo = async (req, res) => {
         processingStatus: 'completed',
         quality: '720p' // Legacy field
       };
-      
+
       const video = await Video.create(videoData);
 
       res.status(201).json({
@@ -507,7 +515,7 @@ const getStudentProgress = async (req, res) => {
         const progress = await Progress.findOne({
           where: { userId, videoId: video.id }
         });
-        
+
         return {
           ...video.toJSON(),
           Progress: progress ? [progress] : []

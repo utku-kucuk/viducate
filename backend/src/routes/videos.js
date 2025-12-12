@@ -8,16 +8,26 @@ const path = require('path');
 const fs = require('fs');
 const { Video, User, Progress, Course } = require('../models');
 const videoController = require('../controllers/videoController');
-const { processVideoResolutions } = require('../utils/videoProcessor');
+const { processVideoResolutions } = require('..//utils/videoProcessor');
 const { v4: uuidv4 } = require('uuid');
 const logger = require('../utils/logger');
 
 // Memory storage for chunk uploads
 const chunkMemoryStorage = multer.memoryStorage();
+const getChunkMaxSize = () => {
+  const size = process.env.MAX_CHUNK_SIZE || '10MB'; // Default to 10MB per chunk
+  if (typeof size === 'number') return size;
+  const str = size.toString().toUpperCase();
+  if (str.endsWith('GB')) return parseFloat(str) * 1024 * 1024 * 1024;
+  if (str.endsWith('MB')) return parseFloat(str) * 1024 * 1024;
+  if (str.endsWith('KB')) return parseFloat(str) * 1024;
+  return 10 * 1024 * 1024; // Fallback to 10MB
+};
+
 const chunkUpload = multer({
   storage: chunkMemoryStorage,
   limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB per chunk
+    fileSize: getChunkMaxSize()
   }
 }).single('chunk');
 
@@ -38,7 +48,16 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ 
+const getMaxSize = () => {
+  const size = process.env.MAX_FILE_SIZE || '500MB';
+  if (typeof size === 'number') return size;
+  const str = size.toString().toUpperCase();
+  if (str.endsWith('GB')) return parseFloat(str) * 1024 * 1024 * 1024;
+  if (str.endsWith('MB')) return parseFloat(str) * 1024 * 1024;
+  return 500 * 1024 * 1024;
+};
+
+const upload = multer({
   storage: storage,
   fileFilter: function (req, file, cb) {
     // Check file type - be more lenient for testing
@@ -49,7 +68,7 @@ const upload = multer({
     }
   },
   limits: {
-    fileSize: 500 * 1024 * 1024 // 500MB limit
+    fileSize: getMaxSize()
   }
 });
 
@@ -77,7 +96,7 @@ router.post('/upload', auth, requireTeacher, upload.single('video'), async (req,
         resolvedIsPublished = undefined;
       }
     }
-    
+
     // Paths for processing (but we will process asynchronously)
     const inputFilePath = path.join(__dirname, '../../uploads/videos', req.file.filename);
     const outputDir = path.join(__dirname, '../../uploads/videos');
@@ -132,7 +151,7 @@ router.post('/upload', auth, requireTeacher, upload.single('video'), async (req,
         logger.error('Background processing failed:', e);
         try {
           await video.update({ processingStatus: 'failed' });
-        } catch {}
+        } catch { }
       }
     })();
 
@@ -295,7 +314,7 @@ router.post('/complete-upload', auth, requireTeacher, async (req, res) => {
         // Do not auto-publish course here; publishing is an explicit teacher/admin action
       } catch (e) {
         logger.error('Background finalize failed:', e);
-        try { await video.update({ processingStatus: 'failed' }); } catch {}
+        try { await video.update({ processingStatus: 'failed' }); } catch { }
       }
     })();
   } catch (error) {
@@ -362,7 +381,7 @@ router.put('/:id', auth, requireTeacher, [
 ], validate, async (req, res) => {
   try {
     const video = await Video.findByPk(req.params.id);
-    
+
     if (!video) {
       return res.status(404).json({
         success: false,
@@ -398,7 +417,7 @@ router.put('/:id', auth, requireTeacher, [
 router.delete('/:id', auth, requireTeacher, async (req, res) => {
   try {
     const video = await Video.findByPk(req.params.id);
-    
+
     if (!video) {
       return res.status(404).json({
         success: false,
