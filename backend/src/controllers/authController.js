@@ -105,8 +105,9 @@ const login = async (req, res) => {
       token
     });
   } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({ error: 'Login failed.' });
+    console.error('Login error details:', error);
+    console.error('Stack:', error.stack);
+    res.status(500).json({ error: 'Login failed.', details: error.message });
   }
 };
 
@@ -152,7 +153,7 @@ const forgotPassword = async (req, res) => {
     // TODO: Send email with reset link
     // This requires email service integration (SendGrid, AWS SES, etc.)
     // For now, just return the token (in production, send via email)
-    res.json({ 
+    res.json({
       message: 'Password reset link sent to your email.',
       resetToken: process.env.NODE_ENV === 'development' ? resetToken : undefined
     });
