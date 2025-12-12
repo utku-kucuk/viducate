@@ -46,7 +46,8 @@ const upload = multer({
         cb(new Error('Only video files are allowed!'));
       }
     }
-  }).single('video');
+  }
+}).single('video');
 
 // Get videos by course
 const getVideosByCourse = async (req, res) => {
