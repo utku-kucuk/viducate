@@ -276,22 +276,31 @@ async function getTableName(expectedName) {
       
       // Query sqlite_master for all tables
       const [results] = await sequelize.query(
-        "SELECT name FROM sqlite_master WHERE type='table'"
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
       );
       
       if (results && results.length > 0) {
-        // Try to find case-insensitive match
-        const match = results.find(r => 
+        // Try to find exact case-insensitive match first
+        const exactMatch = results.find(r => 
           r.name.toLowerCase() === expectedName.toLowerCase()
         );
-        if (match) return match.name;
+        if (exactMatch) {
+          logger.info(`✅ Found table: ${exactMatch.name} (looking for ${expectedName})`);
+          return exactMatch.name;
+        }
         
         // Try partial match (e.g., "Questions" matches "Questions" or "questions")
         const partial = results.find(r => 
           r.name.toLowerCase().includes(expectedName.toLowerCase()) ||
           expectedName.toLowerCase().includes(r.name.toLowerCase())
         );
-        if (partial) return partial.name;
+        if (partial) {
+          logger.info(`✅ Found table (partial): ${partial.name} (looking for ${expectedName})`);
+          return partial.name;
+        }
+        
+        // Log available tables for debugging
+        logger.warn(`⚠️  Table ${expectedName} not found. Available tables: ${results.map(r => r.name).join(', ')}`);
       }
       
       // Try common variations
@@ -333,7 +342,12 @@ async function getTableName(expectedName) {
 async function ensureQuestionImageUrlColumn() {
   try {
     const qi = sequelize.getQueryInterface();
-    const tableName = await getTableName('Questions') || 'Questions';
+    // SQLite uses exact table names from database
+    const tableName = await getTableName('Questions');
+    if (!tableName) {
+      logger.warn('⚠️  Questions table not found, skipping column check');
+      return;
+    }
     const desc = await qi.describeTable(tableName);
     if (!desc || !Object.prototype.hasOwnProperty.call(desc, 'imageUrl')) {
       await qi.addColumn(tableName, 'imageUrl', {
@@ -366,7 +380,11 @@ async function ensureQuestionImageUrlColumn() {
 async function ensureCourseNewColumns() {
   try {
     const qi = sequelize.getQueryInterface();
-    const tableName = await getTableName('Courses') || 'Courses';
+    const tableName = await getTableName('Courses');
+    if (!tableName) {
+      logger.warn('⚠️  Courses table not found, skipping column check');
+      return;
+    }
     const desc = await qi.describeTable(tableName);
     if (!desc) return;
     if (!Object.prototype.hasOwnProperty.call(desc, 'department')) {
@@ -418,7 +436,11 @@ async function ensureCourseNewColumns() {
 async function ensureVideoNewColumns() {
   try {
     const qi = sequelize.getQueryInterface();
-    const tableName = await getTableName('Videos') || 'Videos';
+    const tableName = await getTableName('Videos');
+    if (!tableName) {
+      logger.warn('⚠️  Videos table not found, skipping column check');
+      return;
+    }
     const desc = await qi.describeTable(tableName);
     if (!desc) return;
     if (!Object.prototype.hasOwnProperty.call(desc, 'videoVariants')) {
