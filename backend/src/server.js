@@ -61,18 +61,42 @@ app.use(cors({
     const devExtras = ['http://localhost:3001','http://localhost:3002','http://localhost:3003','http://localhost:5001'];
     const allowedOrigins = isProd ? baseAllowed.filter(Boolean) : baseAllowed.concat(devExtras);
     
-    // Normalize origins for comparison (remove trailing slash)
-    const normalizedOrigin = origin.replace(/\/$/, '');
-    const normalizedAllowed = allowedOrigins.map(o => o.replace(/\/$/, ''));
+    // Normalize origins for comparison (remove trailing slash and protocol)
+    const normalizedOrigin = origin.replace(/\/$/, '').toLowerCase();
+    const normalizedAllowed = allowedOrigins.map(o => o.replace(/\/$/, '').toLowerCase());
     
-    if (normalizedAllowed.indexOf(normalizedOrigin) !== -1) {
+    // Also check if origin hostname matches allowed hostname
+    let originMatches = false;
+    try {
+      const originUrl = new URL(origin);
+      for (const allowed of allowedOrigins) {
+        try {
+          const allowedUrl = new URL(allowed);
+          if (originUrl.hostname === allowedUrl.hostname) {
+            originMatches = true;
+            break;
+          }
+        } catch (e) {
+          // Skip invalid URL
+        }
+      }
+    } catch (e) {
+      // Origin URL parsing failed
+    }
+    
+    if (normalizedAllowed.indexOf(normalizedOrigin) !== -1 || originMatches) {
+      if (!isProd) {
+        logger.info('CORS allowed origin:', origin);
+      }
       callback(null, true);
     } else {
-      if (!isProd) {
-        logger.warn('CORS blocked origin:', origin, 'Allowed:', normalizedAllowed);
-      } else {
-        logger.warn('CORS blocked origin:', origin);
-      }
+      // Always log CORS blocks in production for debugging
+      logger.warn('❌ CORS blocked origin:', origin);
+      logger.warn('✅ CORS allowed origins:', JSON.stringify(allowedOrigins, null, 2));
+      logger.warn('📝 CORS frontend URL from env:', frontendUrl);
+      logger.warn('🔍 Normalized origin:', normalizedOrigin);
+      logger.warn('🔍 Normalized allowed:', JSON.stringify(normalizedAllowed, null, 2));
+      logger.warn('🔍 Origin matches by hostname:', originMatches);
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -175,7 +199,10 @@ app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'OK', 
     message: 'Viducate API is running',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development',
+    port: process.env.PORT || '5000',
+    frontendUrl: process.env.FRONTEND_URL || 'not set'
   });
 });
 
@@ -232,20 +259,75 @@ app.use('*', (req, res) => {
 });
 
 // Database connection and server start
-async function getTableName(tableName) {
-  // SQLite is case-sensitive, try different variations
-  const variations = [tableName, tableName.toLowerCase(), tableName.toUpperCase()];
-  const qi = sequelize.getQueryInterface();
-  
-  for (const name of variations) {
-    try {
-      const desc = await qi.describeTable(name);
-      if (desc) return name;
-    } catch (e) {
-      // Continue to next variation
+async function getTableName(expectedName) {
+  try {
+    const qi = sequelize.getQueryInterface();
+    const dialect = sequelize.getDialect();
+    
+    // For SQLite, query the sqlite_master table to find actual table names
+    if (dialect === 'sqlite') {
+      try {
+        // First try exact match
+        const desc = await qi.describeTable(expectedName);
+        if (desc) return expectedName;
+      } catch (e) {
+        // Not found, continue
+      }
+      
+      // Query sqlite_master for all tables
+      const [results] = await sequelize.query(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+      );
+      
+      if (results && results.length > 0) {
+        // Try to find case-insensitive match
+        const match = results.find(r => 
+          r.name.toLowerCase() === expectedName.toLowerCase()
+        );
+        if (match) return match.name;
+        
+        // Try partial match (e.g., "Questions" matches "Questions" or "questions")
+        const partial = results.find(r => 
+          r.name.toLowerCase().includes(expectedName.toLowerCase()) ||
+          expectedName.toLowerCase().includes(r.name.toLowerCase())
+        );
+        if (partial) return partial.name;
+      }
+      
+      // Try common variations
+      const variations = [
+        expectedName,
+        expectedName.toLowerCase(),
+        expectedName.toUpperCase(),
+        expectedName.charAt(0).toUpperCase() + expectedName.slice(1).toLowerCase()
+      ];
+      
+      for (const name of variations) {
+        try {
+          const desc = await qi.describeTable(name);
+          if (desc) return name;
+        } catch (e) {
+          // Continue
+        }
+      }
+    } else {
+      // For other databases, try variations
+      const variations = [expectedName, expectedName.toLowerCase(), expectedName.toUpperCase()];
+      for (const name of variations) {
+        try {
+          const desc = await qi.describeTable(name);
+          if (desc) return name;
+        } catch (e) {
+          // Continue
+        }
+      }
     }
+    
+    return null;
+  } catch (error) {
+    logger.warn(`⚠️  Error finding table name for ${expectedName}:`, error?.message || error);
+    return null;
   }
-  return null;
 }
 
 async function ensureQuestionImageUrlColumn() {
