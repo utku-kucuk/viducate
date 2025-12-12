@@ -69,11 +69,22 @@ if [ ! -f backend/.env ]; then
         cp backend/env.production backend/.env
         # Replace hardcoded paths with actual project directory
         sed -i "s|/home/pi/viducate|$PROJECT_DIR|g" backend/.env
-        echo -e "${YELLOW}⚠️  Created backend/.env from default and updated paths to $PROJECT_DIR.${NC}"
+        
+        # Update FRONTEND_URL to match the chosen domain
+        # Assuming HTTP for now, user can change to https manually if needed
+        sed -i "s|https://test.mutkukucuk.com|http://$DOMAIN_NAME|g" backend/.env
+        
+        echo -e "${YELLOW}⚠️  Created backend/.env, updated paths, and set FRONTEND_URL to http://$DOMAIN_NAME.${NC}"
     else
         echo -e "${RED}❌ backend/env.production not found!${NC}"
         exit 1
     fi
+fi
+
+# Fix permissions for frontend build artifact if they exist (to avoid EACCES)
+if [ -d "frontend/build" ]; then
+    echo "Fixing frontend permissions..."
+    sudo chown -R $CURRENT_USER:$CURRENT_USER frontend/build || true
 fi
 
 # 4. Logs Directory
