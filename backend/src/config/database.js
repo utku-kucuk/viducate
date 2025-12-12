@@ -29,7 +29,7 @@ if (isProduction && databaseUrl) {
   // SQLite for development
   sequelize = new Sequelize({
     dialect: 'sqlite',
-    storage: './viducate.db',
+    storage: process.env.DB_STORAGE || './viducate.db',
     logging: process.env.NODE_ENV === 'development' ? console.log : false,
     pool: {
       max: 5,
