@@ -33,18 +33,18 @@ const getMaxSize = () => {
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: getMaxSize(),
-    fileFilter: (req, file, cb) => {
-      // Check file type
-      const allowedTypes = /mp4|avi|mov|wmv|flv|webm|mkv/;
-      const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-      const mimetype = allowedTypes.test(file.mimetype);
+    fileSize: getMaxSize()
+  },
+  fileFilter: (req, file, cb) => {
+    // Check file type
+    const allowedTypes = /mp4|avi|mov|wmv|flv|webm|mkv/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
 
-      if (mimetype && extname) {
-        return cb(null, true);
-      } else {
-        cb(new Error('Only video files are allowed!'));
-      }
+    if (mimetype && extname) {
+      return cb(null, true);
+    } else {
+      cb(new Error('Only video files are allowed!'));
     }
   }
 }).single('video');

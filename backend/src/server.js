@@ -37,13 +37,40 @@ app.use(cors({
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     const isProd = process.env.NODE_ENV === 'production';
-    const baseAllowed = [process.env.FRONTEND_URL || 'http://localhost:3000'];
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    
+    // Build allowed origins list
+    const baseAllowed = [frontendUrl];
+    
+    // Add http/https variations if frontend URL is https
+    if (frontendUrl.startsWith('https://')) {
+      baseAllowed.push(frontendUrl.replace('https://', 'http://'));
+    } else if (frontendUrl.startsWith('http://')) {
+      baseAllowed.push(frontendUrl.replace('http://', 'https://'));
+    }
+    
+    // Add domain without protocol for flexibility
+    try {
+      const url = new URL(frontendUrl);
+      baseAllowed.push(`https://${url.hostname}`);
+      baseAllowed.push(`http://${url.hostname}`);
+    } catch (e) {
+      // Invalid URL, skip
+    }
+    
     const devExtras = ['http://localhost:3001','http://localhost:3002','http://localhost:3003','http://localhost:5001'];
     const allowedOrigins = isProd ? baseAllowed.filter(Boolean) : baseAllowed.concat(devExtras);
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    
+    // Normalize origins for comparison (remove trailing slash)
+    const normalizedOrigin = origin.replace(/\/$/, '');
+    const normalizedAllowed = allowedOrigins.map(o => o.replace(/\/$/, ''));
+    
+    if (normalizedAllowed.indexOf(normalizedOrigin) !== -1) {
       callback(null, true);
     } else {
       if (!isProd) {
+        logger.warn('CORS blocked origin:', origin, 'Allowed:', normalizedAllowed);
+      } else {
         logger.warn('CORS blocked origin:', origin);
       }
       callback(new Error('Not allowed by CORS'));
@@ -205,16 +232,33 @@ app.use('*', (req, res) => {
 });
 
 // Database connection and server start
+async function getTableName(tableName) {
+  // SQLite is case-sensitive, try different variations
+  const variations = [tableName, tableName.toLowerCase(), tableName.toUpperCase()];
+  const qi = sequelize.getQueryInterface();
+  
+  for (const name of variations) {
+    try {
+      const desc = await qi.describeTable(name);
+      if (desc) return name;
+    } catch (e) {
+      // Continue to next variation
+    }
+  }
+  return null;
+}
+
 async function ensureQuestionImageUrlColumn() {
   try {
     const qi = sequelize.getQueryInterface();
-    const desc = await qi.describeTable('Questions');
+    const tableName = await getTableName('Questions') || 'Questions';
+    const desc = await qi.describeTable(tableName);
     if (!desc || !Object.prototype.hasOwnProperty.call(desc, 'imageUrl')) {
-      await qi.addColumn('Questions', 'imageUrl', {
+      await qi.addColumn(tableName, 'imageUrl', {
         type: DataTypes.TEXT,
         allowNull: true
       });
-      logger.info('🛠  Added missing column Questions.imageUrl');
+      logger.info(`🛠  Added missing column ${tableName}.imageUrl`);
     } else {
       // Ensure type is TEXT to support long URLs/base64
       const col = desc.imageUrl;
@@ -222,13 +266,13 @@ async function ensureQuestionImageUrlColumn() {
       const typeStr = String(col?.type || '').toLowerCase();
       if (!typeStr.includes('text')) {
         try {
-          await qi.changeColumn('Questions', 'imageUrl', {
+          await qi.changeColumn(tableName, 'imageUrl', {
             type: DataTypes.TEXT,
             allowNull: true
           });
-          logger.info('🛠  Updated Questions.imageUrl to TEXT');
+          logger.info(`🛠  Updated ${tableName}.imageUrl to TEXT`);
         } catch (e) {
-          logger.warn('⚠️  Could not alter Questions.imageUrl to TEXT (dialect limitation?):', e?.message || e);
+          logger.warn(`⚠️  Could not alter ${tableName}.imageUrl to TEXT (dialect limitation?):`, e?.message || e);
         }
       }
     }
@@ -240,46 +284,47 @@ async function ensureQuestionImageUrlColumn() {
 async function ensureCourseNewColumns() {
   try {
     const qi = sequelize.getQueryInterface();
-    const desc = await qi.describeTable('Courses');
+    const tableName = await getTableName('Courses') || 'Courses';
+    const desc = await qi.describeTable(tableName);
     if (!desc) return;
     if (!Object.prototype.hasOwnProperty.call(desc, 'department')) {
-      await qi.addColumn('Courses', 'department', {
+      await qi.addColumn(tableName, 'department', {
         type: DataTypes.STRING,
         allowNull: true
       });
-      logger.info('🛠  Added missing column Courses.department');
+      logger.info(`🛠  Added missing column ${tableName}.department`);
     }
     if (!Object.prototype.hasOwnProperty.call(desc, 'adminDisabled')) {
-      await qi.addColumn('Courses', 'adminDisabled', {
+      await qi.addColumn(tableName, 'adminDisabled', {
         type: DataTypes.BOOLEAN,
         defaultValue: false
       });
-      logger.info('🛠  Added missing column Courses.adminDisabled');
+      logger.info(`🛠  Added missing column ${tableName}.adminDisabled`);
     }
     if (!Object.prototype.hasOwnProperty.call(desc, 'adminPublishLocked')) {
-      await qi.addColumn('Courses', 'adminPublishLocked', {
+      await qi.addColumn(tableName, 'adminPublishLocked', {
         type: DataTypes.BOOLEAN,
         defaultValue: false
       });
-      logger.info('🛠  Added missing column Courses.adminPublishLocked');
+      logger.info(`🛠  Added missing column ${tableName}.adminPublishLocked`);
     }
     if (!Object.prototype.hasOwnProperty.call(desc, 'teacherPublishAllowed')) {
-      await qi.addColumn('Courses', 'teacherPublishAllowed', {
+      await qi.addColumn(tableName, 'teacherPublishAllowed', {
         type: DataTypes.BOOLEAN,
         defaultValue: true
       });
-      logger.info('🛠  Added missing column Courses.teacherPublishAllowed');
+      logger.info(`🛠  Added missing column ${tableName}.teacherPublishAllowed`);
     }
     // Relax category to allowNull if currently not null
     if (desc.category && desc.category.allowNull === false) {
       try {
-        await qi.changeColumn('Courses', 'category', {
+        await qi.changeColumn(tableName, 'category', {
           type: DataTypes.STRING,
           allowNull: true
         });
-        logger.info('🛠  Updated Courses.category to allow NULL');
+        logger.info(`🛠  Updated ${tableName}.category to allow NULL`);
       } catch (e) {
-        logger.warn('⚠️  Could not alter Courses.category allowNull (may not be supported on current dialect):', e?.message || e);
+        logger.warn(`⚠️  Could not alter ${tableName}.category allowNull (may not be supported on current dialect):`, e?.message || e);
       }
     }
   } catch (error) {
@@ -291,15 +336,16 @@ async function ensureCourseNewColumns() {
 async function ensureVideoNewColumns() {
   try {
     const qi = sequelize.getQueryInterface();
-    const desc = await qi.describeTable('Videos');
+    const tableName = await getTableName('Videos') || 'Videos';
+    const desc = await qi.describeTable(tableName);
     if (!desc) return;
     if (!Object.prototype.hasOwnProperty.call(desc, 'videoVariants')) {
-      await qi.addColumn('Videos', 'videoVariants', {
+      await qi.addColumn(tableName, 'videoVariants', {
         type: DataTypes.TEXT,
         allowNull: true,
         defaultValue: '[]'
       });
-      logger.info('🛠  Added missing column Videos.videoVariants');
+      logger.info(`🛠  Added missing column ${tableName}.videoVariants`);
     }
   } catch (error) {
     logger.warn('⚠️  Could not ensure Videos new columns:', error?.message || error);
