@@ -85,8 +85,8 @@ app.use(cors({
     }
     
     if (normalizedAllowed.indexOf(normalizedOrigin) !== -1 || originMatches) {
-      if (!isProd) {
-        logger.info('CORS allowed origin:', origin);
+      if (isProd) {
+        logger.info('✅ CORS allowed origin:', origin);
       }
       callback(null, true);
     } else {

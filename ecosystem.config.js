@@ -3,21 +3,34 @@ const fs = require('fs');
 
 // Load .env file manually
 function loadEnvFile() {
-  const envPath = path.join(__dirname, 'backend', '.env');
-  if (fs.existsSync(envPath)) {
-    const envContent = fs.readFileSync(envPath, 'utf8');
-    const envVars = {};
-    envContent.split('\n').forEach(line => {
-      const trimmed = line.trim();
-      if (trimmed && !trimmed.startsWith('#')) {
-        const [key, ...valueParts] = trimmed.split('=');
-        if (key && valueParts.length > 0) {
-          envVars[key.trim()] = valueParts.join('=').trim();
+  // Try multiple possible paths
+  const possiblePaths = [
+    path.join(__dirname, 'backend', '.env'),
+    path.join(__dirname, '.env'),
+    '/home/utku/viducate/backend/.env'
+  ];
+  
+  for (const envPath of possiblePaths) {
+    if (fs.existsSync(envPath)) {
+      console.log(`Loading .env from: ${envPath}`);
+      const envContent = fs.readFileSync(envPath, 'utf8');
+      const envVars = {};
+      envContent.split('\n').forEach(line => {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith('#')) {
+          const [key, ...valueParts] = trimmed.split('=');
+          if (key && valueParts.length > 0) {
+            const value = valueParts.join('=').trim();
+            // Remove quotes if present
+            envVars[key.trim()] = value.replace(/^["']|["']$/g, '');
+          }
         }
-      }
-    });
-    return envVars;
+      });
+      console.log(`Loaded ${Object.keys(envVars).length} environment variables`);
+      return envVars;
+    }
   }
+  console.warn('No .env file found in any of the expected locations');
   return {};
 }
 

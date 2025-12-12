@@ -7,65 +7,49 @@ echo "======================"
 echo ""
 
 DOMAIN="edu.mutkukucuk.com"
-EMAIL="teacher1@example.com"
-PASSWORD="teacher123"
 
-echo "1. Testing login endpoint..."
-echo "   Email: $EMAIL"
+# Test 1: Health check
+echo "1. Testing health endpoint..."
+HEALTH=$(curl -s https://$DOMAIN/api/health)
+echo "   Response: $HEALTH"
 echo ""
 
-# Test login
-RESPONSE=$(curl -s -X POST https://$DOMAIN/api/auth/login \
+# Test 2: Login endpoint (without credentials)
+echo "2. Testing login endpoint (should return validation error)..."
+LOGIN_RESPONSE=$(curl -s -X POST https://$DOMAIN/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{}')
+echo "   Response: $LOGIN_RESPONSE"
+echo ""
+
+# Test 3: Login with test credentials
+echo "3. Testing login with teacher1 credentials..."
+LOGIN_RESPONSE=$(curl -s -X POST https://$DOMAIN/api/auth/login \
   -H "Content-Type: application/json" \
   -H "Origin: https://$DOMAIN" \
-  -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}" \
-  -w "\nHTTP_CODE:%{http_code}")
-
-HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE" | cut -d: -f2)
-BODY=$(echo "$RESPONSE" | grep -v "HTTP_CODE")
-
-echo "Response:"
-echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
-echo ""
-echo "HTTP Status: $HTTP_CODE"
+  -d '{"email":"teacher1@example.com","password":"teacher123"}')
+echo "   Response: $LOGIN_RESPONSE"
 echo ""
 
-if [ "$HTTP_CODE" = "200" ]; then
-    echo "✅ Login başarılı!"
-    TOKEN=$(echo "$BODY" | jq -r '.token' 2>/dev/null)
-    if [ -n "$TOKEN" ] && [ "$TOKEN" != "null" ]; then
-        echo "✅ Token alındı: ${TOKEN:0:20}..."
-        echo ""
-        echo "2. Testing profile endpoint with token..."
-        PROFILE_RESPONSE=$(curl -s -X GET https://$DOMAIN/api/auth/profile \
-          -H "Authorization: Bearer $TOKEN" \
-          -H "Origin: https://$DOMAIN")
-        echo "$PROFILE_RESPONSE" | jq . 2>/dev/null || echo "$PROFILE_RESPONSE"
-    else
-        echo "⚠️  Token alınamadı"
-    fi
-elif [ "$HTTP_CODE" = "401" ]; then
-    echo "❌ Login başarısız - Kullanıcı adı veya şifre yanlış"
-elif [ "$HTTP_CODE" = "403" ]; then
-    echo "❌ Login başarısız - Hesap devre dışı"
-else
-    echo "❌ Login başarısız - HTTP $HTTP_CODE"
-fi
-
-echo ""
-echo "3. Testing CORS headers..."
-CORS_HEADERS=$(curl -s -I -X OPTIONS https://$DOMAIN/api/auth/login \
+# Test 4: CORS preflight
+echo "4. Testing CORS preflight..."
+CORS_RESPONSE=$(curl -s -X OPTIONS https://$DOMAIN/api/auth/login \
   -H "Origin: https://$DOMAIN" \
   -H "Access-Control-Request-Method: POST" \
-  -H "Access-Control-Request-Headers: Content-Type" | grep -i "access-control")
-
-if [ -n "$CORS_HEADERS" ]; then
-    echo "✅ CORS headers mevcut:"
-    echo "$CORS_HEADERS"
+  -H "Access-Control-Request-Headers: Content-Type" \
+  -v 2>&1 | grep -i "access-control")
+if [ -n "$CORS_RESPONSE" ]; then
+    echo "   ✅ CORS headers present:"
+    echo "$CORS_RESPONSE"
 else
-    echo "❌ CORS headers bulunamadı"
+    echo "   ❌ CORS headers missing"
 fi
-
 echo ""
+
+# Test 5: Check backend logs
+echo "5. Recent backend logs (last 10 lines)..."
+pm2 logs viducate-backend --lines 10 --nostream | tail -10
+echo ""
+
 echo "======================"
-echo "Test tamamlandı!"
+echo "Test completed!"

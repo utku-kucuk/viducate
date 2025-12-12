@@ -3,195 +3,192 @@
 ## Sorun
 HTTPS çalışıyor, site açılıyor ama login yapılamıyor.
 
-## Olası Nedenler
+## Tespit Edilen Sorunlar
 
-1. **PM2 environment variables yüklenmiyor** - `frontendUrl` "not set" görünüyor
-2. **CORS sorunu** - Login request'i engelleniyor olabilir
-3. **Kullanıcı yok veya şifre yanlış**
-4. **Database bağlantı sorunu**
+1. ⚠️ **Environment Variables yüklenmiyor** - `frontendUrl: "not set"` görünüyor
+2. ❌ **CORS sorunu olabilir** - Frontend'den gelen istekler engellenebilir
+3. ⚠️ **Kullanıcı veritabanında olmayabilir** veya şifre yanlış
 
-## Hemen Yapılacaklar
+## Çözüm Adımları
 
-### 1. PM2 Ecosystem Config'i Düzelt
-
-`ecosystem.config.js` dosyasını güncelledik. Şimdi PM2'yi yeniden başlatın:
+### 1. PM2'yi Environment Variables ile Yeniden Başlat
 
 ```bash
 cd ~/viducate
+git pull origin main
 pm2 delete viducate-backend
 pm2 start ecosystem.config.js --update-env
 pm2 save
+pm2 logs viducate-backend --lines 20
+```
+
+Health check'te artık `frontendUrl` görünmeli:
+```bash
+curl https://edu.mutkukucuk.com/api/health
 ```
 
 ### 2. Backend .env Dosyasını Kontrol Et
 
 ```bash
-cat backend/.env | grep -E "FRONTEND_URL|JWT_SECRET|NODE_ENV"
+cat backend/.env | grep -E "FRONTEND_URL|JWT_SECRET"
 ```
 
-Şu değerleri görmelisiniz:
-```
-NODE_ENV=production
-PORT=8080
+Şu satırları görmelisiniz:
+```env
 FRONTEND_URL=https://edu.mutkukucuk.com
-JWT_SECRET=your-secret-key
+JWT_SECRET=your-secret-key-here
 ```
 
-### 3. PM2 Environment Variables'ı Kontrol Et
+### 3. Login Test Scriptini Çalıştır
 
 ```bash
-pm2 env 0
-```
-
-`FRONTEND_URL` değişkenini görmelisiniz. Eğer yoksa:
-
-```bash
-# .env dosyasını manuel yükle
-pm2 restart viducate-backend --update-env
-pm2 logs viducate-backend --lines 20
-```
-
-### 4. Login Test
-
-```bash
-# Test scriptini çalıştır
-chmod +x test-login.sh
 ./test-login.sh
 ```
 
-Veya manuel test:
+Bu script:
+- Health endpoint'i test eder
+- Login endpoint'ini test eder
+- CORS headers'ı kontrol eder
+- Backend loglarını gösterir
 
-```bash
-curl -X POST https://edu.mutkukucuk.com/api/auth/login \
-  -H "Content-Type: application/json" \
-  -H "Origin: https://edu.mutkukucuk.com" \
-  -d '{"email":"teacher1@example.com","password":"teacher123"}'
-```
+### 4. Kullanıcı Kontrolü
 
-### 5. Kullanıcı Kontrolü
-
-Database'de kullanıcı var mı kontrol edin:
+Veritabanında `teacher1` kullanıcısının olup olmadığını kontrol edin:
 
 ```bash
 cd backend
 node -e "
-const { sequelize } = require('./src/config/database');
-const User = require('./src/models/User');
+const { User } = require('./src/models');
 (async () => {
-  await sequelize.authenticate();
-  const users = await User.findAll({ attributes: ['id', 'email', 'role', 'isActive'] });
-  console.log('Kullanıcılar:');
-  users.forEach(u => console.log(\`  - \${u.email} (\${u.role}) - Active: \${u.isActive}\`));
-  await sequelize.close();
+  try {
+    const user = await User.findOne({ where: { email: 'teacher1@example.com' } });
+    if (user) {
+      console.log('✅ User found:');
+      console.log('  Email:', user.email);
+      console.log('  Role:', user.role);
+      console.log('  Active:', user.isActive);
+    } else {
+      console.log('❌ User not found');
+    }
+    process.exit(0);
+  } catch (e) {
+    console.error('Error:', e);
+    process.exit(1);
+  }
 })();
 "
 ```
 
-### 6. CORS Loglarını Kontrol Et
-
-```bash
-pm2 logs viducate-backend --lines 0
-```
-
-Ardından tarayıcıda login sayfasını açın. Loglarda CORS hatalarını göreceksiniz.
-
-### 7. Backend Loglarını Kontrol Et
-
-```bash
-pm2 logs viducate-backend --lines 50 | grep -i "login\|cors\|error"
-```
-
-## Beklenen Sonuçlar
-
-### ✅ Başarılı Login Response:
-
-```json
-{
-  "success": true,
-  "message": "Login successful",
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "user": {
-    "id": "...",
-    "email": "teacher1@example.com",
-    "role": "teacher",
-    ...
-  }
-}
-```
-
-### ❌ Hatalı Login Response:
-
-```json
-{
-  "success": false,
-  "message": "Invalid email or password"
-}
-```
-
-## Sorun Devam Ederse
-
-### 1. Test Kullanıcısı Oluştur
+### 5. Test Kullanıcısı Oluştur (Eğer Yoksa)
 
 ```bash
 cd backend
 node scripts/createTestUsers.js
 ```
 
-### 2. Şifre Hash Kontrolü
-
-Eğer kullanıcı varsa ama login yapamıyorsanız, şifre hash'i kontrol edin:
+Veya manuel olarak:
 
 ```bash
 cd backend
 node -e "
-const bcrypt = require('bcrypt');
-const password = 'teacher123';
-bcrypt.hash(password, 12).then(hash => {
-  console.log('Hash:', hash);
-});
+const { User } = require('./src/models');
+const bcrypt = require('bcryptjs');
+(async () => {
+  try {
+    const hashedPassword = await bcrypt.hash('teacher123', 12);
+    const user = await User.create({
+      email: 'teacher1@example.com',
+      password: hashedPassword,
+      firstName: 'Teacher',
+      lastName: 'One',
+      role: 'teacher',
+      isActive: true,
+      isEmailVerified: true
+    });
+    console.log('✅ User created:', user.email);
+    process.exit(0);
+  } catch (e) {
+    if (e.name === 'SequelizeUniqueConstraintError') {
+      console.log('⚠️  User already exists');
+    } else {
+      console.error('Error:', e);
+    }
+    process.exit(1);
+  }
+})();
 "
 ```
 
-### 3. JWT Secret Kontrolü
+### 6. CORS Loglarını İncele
 
 ```bash
-cat backend/.env | grep JWT_SECRET
+pm2 logs viducate-backend --lines 0
 ```
 
-Eğer varsayılan değerdeyse (`your-secret-key-jwt-key-here-change-this`), değiştirin:
+Ardından tarayıcıda login sayfasına gidin ve login yapmayı deneyin. Loglarda şunları göreceksiniz:
+- Hangi origin engellendi
+- Hangi origin'lere izin verildi
+- Login isteği geldi mi
+
+### 7. Tarayıcı Console'unu Kontrol Et
+
+Tarayıcıda F12'ye basın, Console ve Network sekmelerine bakın:
+- **Console:** CORS hatası var mı?
+- **Network:** Login isteği gönderildi mi? Response ne?
+
+### 8. Manuel Login Testi
 
 ```bash
-nano backend/.env
-# JWT_SECRET'i güçlü bir değerle değiştirin
+# Login testi
+curl -X POST https://edu.mutkukucuk.com/api/auth/login \
+  -H "Content-Type: application/json" \
+  -H "Origin: https://edu.mutkukucuk.com" \
+  -d '{"email":"teacher1@example.com","password":"teacher123"}' \
+  -v
 ```
 
-### 4. Browser Console Kontrolü
-
-Tarayıcıda F12'ye basın, Console sekmesine gidin ve login yapmayı deneyin. Hataları kontrol edin:
-- CORS hatası
-- 401 Unauthorized
-- 500 Internal Server Error
-- Network errors
-
-## Hızlı Çözüm
-
-Eğer hala sorun varsa, geçici olarak CORS'u tüm origin'lere açın (sadece test için):
-
-`backend/src/server.js` dosyasında:
-
-```javascript
-app.use(cors({
-  origin: true, // Tüm origin'lere izin ver (SADECE TEST İÇİN!)
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  optionsSuccessStatus: 204
-}));
+Başarılı response şu şekilde olmalı:
+```json
+{
+  "message": "Login successful",
+  "user": {...},
+  "token": "..."
+}
 ```
 
-Ardından:
-```bash
-pm2 restart viducate-backend
-```
+## Beklenen Sonuçlar
 
-Eğer bu çalışırsa, sorun CORS yapılandırmasında. Orijinal CORS koduna geri dönüp FRONTEND_URL'i kontrol edin.
+✅ Health check'te `frontendUrl: "https://edu.mutkukucuk.com"` görünmeli
+✅ Login endpoint'i çalışmalı
+✅ CORS headers mevcut olmalı
+✅ Login başarılı olmalı ve token dönmeli
+
+## Sorun Devam Ederse
+
+1. **PM2 logs:**
+   ```bash
+   pm2 logs viducate-backend --lines 100
+   ```
+
+2. **Nginx error log:**
+   ```bash
+   sudo tail -50 /var/log/nginx/error.log
+   ```
+
+3. **Backend .env kontrolü:**
+   ```bash
+   cat backend/.env
+   ```
+
+4. **Database kullanıcı kontrolü:**
+   ```bash
+   cd backend
+   node scripts/check-database.js
+   ```
+
+## Önemli Notlar
+
+- PM2 restart yaparken `--update-env` flag'i kullanın
+- `ecosystem.config.js` dosyası `.env` dosyasını otomatik yükler
+- CORS için `FRONTEND_URL` environment variable'ı doğru ayarlanmalı
+- Kullanıcı veritabanında olmalı ve `isActive: true` olmalı
