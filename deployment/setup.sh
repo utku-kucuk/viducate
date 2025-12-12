@@ -21,6 +21,13 @@ echo -e "${BLUE}🚀 Viducate Deployment Wizard${NC}"
 echo "Current User: $CURRENT_USER"
 echo "Project Directory: $PROJECT_DIR"
 
+# Check if running from root
+if [ ! -d "deployment" ]; then
+    echo -e "${RED}❌ Please run this script from the project root directory!${NC}"
+    echo "Usage: ./deployment/setup.sh"
+    exit 1
+fi
+
 # Get Domain Name
 while [[ -z "$DOMAIN_NAME" ]]; do
     read -p "Enter your domain name (e.g., test.mutkukucuk.com): " DOMAIN_NAME
@@ -118,6 +125,8 @@ fi
 
 # 9. Start Application
 echo -e "${YELLOW}🚀 Starting Application with PM2...${NC}"
+echo -e "${YELLOW}🚀 Starting Application with PM2...${NC}"
+pm2 delete viducate-backend 2>/dev/null || true
 pm2 start ecosystem.config.js
 pm2 save
 pm2 startup | grep "sudo" | bash || true # Attempt to run startup script output if possible, or warn user
