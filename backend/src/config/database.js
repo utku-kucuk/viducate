@@ -26,10 +26,11 @@ if (isProduction && databaseUrl) {
     }
   });
 } else {
-  // SQLite for development
+  // SQLite for development or production without DATABASE_URL
+  const dbStorage = process.env.DB_STORAGE || './viducate.db';
   sequelize = new Sequelize({
     dialect: 'sqlite',
-    storage: process.env.DB_STORAGE || './viducate.db',
+    storage: dbStorage,
     logging: process.env.NODE_ENV === 'development' ? console.log : false,
     pool: {
       max: 5,
