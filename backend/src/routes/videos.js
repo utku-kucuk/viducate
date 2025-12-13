@@ -76,9 +76,47 @@ const upload = multer({
 });
 
 // Video upload endpoint (fast response): save original immediately, process variants in background
-router.post('/upload', auth, requireTeacher, upload.single('video'), async (req, res) => {
+router.post('/upload', auth, requireTeacher, (req, res, next) => {
+  console.log('📤 Video upload endpoint called');
+  console.log('Request headers:', {
+    'content-type': req.headers['content-type'],
+    'content-length': req.headers['content-length']
+  });
+  console.log('Request body keys:', Object.keys(req.body || {}));
+  next();
+}, (req, res, next) => {
+  upload.single('video')(req, res, (err) => {
+    if (err) {
+      console.error('❌ Multer error:', err);
+      console.error('Multer error code:', err.code);
+      console.error('Multer error field:', err.field);
+      if (err instanceof multer.MulterError) {
+        return res.status(400).json({
+          success: false,
+          message: `Upload error: ${err.message}`,
+          error: process.env.NODE_ENV === 'development' ? err.code : undefined
+        });
+      }
+      return res.status(500).json({
+        success: false,
+        message: 'Upload failed',
+        error: process.env.NODE_ENV === 'development' ? err.message : undefined
+      });
+    }
+    next();
+  });
+}, async (req, res) => {
   try {
+    console.log('📥 Multer processing completed');
+    console.log('File received:', req.file ? {
+      filename: req.file.filename,
+      size: req.file.size,
+      mimetype: req.file.mimetype,
+      originalname: req.file.originalname
+    } : 'No file');
+    
     if (!req.file) {
+      console.error('❌ No file in request');
       return res.status(400).json({
         success: false,
         message: 'No video file uploaded'
@@ -199,13 +237,17 @@ router.post('/upload', auth, requireTeacher, upload.single('video'), async (req,
     })();
 
   } catch (error) {
-    console.error('Error uploading video:', error);
+    console.error('❌ Error uploading video:', error);
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
     console.error('Error stack:', error.stack);
     console.error('Request body keys:', Object.keys(req.body || {}));
+    console.error('Request body:', req.body);
     console.error('File info:', req.file ? {
       filename: req.file.filename,
       size: req.file.size,
-      mimetype: req.file.mimetype
+      mimetype: req.file.mimetype,
+      path: req.file.path
     } : 'No file');
     res.status(500).json({
       success: false,
