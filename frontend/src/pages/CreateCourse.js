@@ -605,20 +605,78 @@ const CreateCourse = () => {
           ? 'Course updated. Content is uploading in background...'
           : 'Course created. Content is uploading in background...'
         );
-        // Best-effort course structure sync per upload (optional)
-        contentUploadPromises.forEach(promise => {
-          promise.then(async (uploaded) => {
-            try {
-              if (!uploaded?.data?.success) return;
-              const up = uploaded.data.data;
-              // After upload, we don't need to push IDs into chapters immediately because
-              // CourseDetail resolves video IDs by title, but we keep this for consistency if needed.
-              // No-op here to avoid extra load; rely on title matching in CourseDetail.
-              console.log('Background upload completed for:', up?.title || up?.id);
-            } catch (e) {
-              console.log('Background post-upload sync skipped:', e?.message || e);
+        // Update course chapters with video IDs after upload completes
+        Promise.allSettled(contentUploadPromises).then(async (results) => {
+          try {
+            const token = localStorage.getItem('token');
+            if (token) {
+              axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
             }
-          }).catch(() => {});
+            
+            // Fetch current course to get latest chapters
+            const courseResponse = await axios.get(`/api/courses/${currentCourseId}`);
+            const currentCourse = courseResponse.data.data;
+            let currentChapters = currentCourse.chapters || [];
+            
+            // Parse chapters if string
+            if (typeof currentChapters === 'string') {
+              try {
+                currentChapters = JSON.parse(currentChapters);
+              } catch (e) {
+                console.error('Error parsing chapters:', e);
+                currentChapters = [];
+              }
+            }
+            
+            // Update chapters with video IDs from upload responses
+            let chaptersUpdated = false;
+            results.forEach((result, index) => {
+              if (result.status === 'fulfilled' && result.value?.data?.success) {
+                const uploaded = result.value.data.data;
+                const uploadInfo = result.value;
+                const videoId = uploaded.id;
+                const videoTitle = uploaded.title || uploadInfo.originalTitle;
+                
+                if (videoId && videoTitle) {
+                  // Find and update the video in chapters
+                  currentChapters.forEach(chapter => {
+                    if (chapter.sections) {
+                      chapter.sections.forEach(section => {
+                        if (section.videos) {
+                          section.videos.forEach(video => {
+                            // Match by title (case-insensitive)
+                            if (video.title && videoTitle && 
+                                video.title.toLowerCase() === videoTitle.toLowerCase() && 
+                                !video.id) {
+                              video.id = videoId;
+                              video.fileUrl = uploaded.fileUrl || video.fileUrl;
+                              video.duration = uploaded.duration || video.duration;
+                              chaptersUpdated = true;
+                              console.log(`✅ Updated chapter video with ID: ${videoId} for title: ${videoTitle}`);
+                            }
+                          });
+                        }
+                      });
+                    }
+                  });
+                }
+              }
+            });
+            
+            // If chapters were updated, save to backend
+            if (chaptersUpdated && currentCourseId) {
+              try {
+                await axios.put(`/api/courses/${currentCourseId}`, {
+                  chapters: currentChapters
+                });
+                console.log('✅ Course chapters updated with video IDs');
+              } catch (e) {
+                console.error('Error updating course chapters:', e);
+              }
+            }
+          } catch (e) {
+            console.error('Error syncing video IDs to chapters:', e);
+          }
         });
           } else {
         setSuccess(isEditMode ? 'Course updated successfully!' : 'Course created successfully!');

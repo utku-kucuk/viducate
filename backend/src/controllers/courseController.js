@@ -644,26 +644,53 @@ const getCourseById = async (req, res) => {
       }
     }
     
-    // Enhance chapters with actual video data from Video model
-    if (Array.isArray(courseData.chapters)) {
-      // Get all video IDs from chapters
-      const videoIdsInChapters = [];
-      courseData.chapters.forEach(chapter => {
-        if (Array.isArray(chapter.sections)) {
-          chapter.sections.forEach(section => {
-            if (Array.isArray(section.videos)) {
-              section.videos.forEach(video => {
-                if (video.id) {
-                  videoIdsInChapters.push(video.id);
-                }
-              });
-            }
-          });
-        }
-      });
-      
-      // Fetch actual video records if any IDs found
-      if (videoIdsInChapters.length > 0) {
+      // Enhance chapters with actual video data from Video model
+      if (Array.isArray(courseData.chapters)) {
+        // First, get all videos for this course from database
+        const courseVideos = await Video.findAll({
+          where: { courseId: id },
+          attributes: ['id', 'title', 'fileUrl', 'videoVariants', 'quality', 'duration', 'description', 'order']
+        });
+        
+        // Create a map of videos by title (for matching when ID is missing)
+        const videoMapByTitle = new Map();
+        const videoMapById = new Map();
+        courseVideos.forEach(video => {
+          const videoData = video.toJSON();
+          if (videoData.title) {
+            videoMapByTitle.set(videoData.title.toLowerCase(), videoData);
+          }
+          if (videoData.id) {
+            videoMapById.set(videoData.id, videoData);
+          }
+        });
+        
+        // Get all video IDs from chapters (if any)
+        const videoIdsInChapters = [];
+        courseData.chapters.forEach(chapter => {
+          if (Array.isArray(chapter.sections)) {
+            chapter.sections.forEach(section => {
+              if (Array.isArray(section.videos)) {
+                section.videos.forEach(video => {
+                  if (video.id) {
+                    videoIdsInChapters.push(video.id);
+                  } else if (video.title) {
+                    // Try to find video by title and add ID
+                    const matchedVideo = videoMapByTitle.get(video.title.toLowerCase());
+                    if (matchedVideo && matchedVideo.id) {
+                      video.id = matchedVideo.id;
+                      videoIdsInChapters.push(matchedVideo.id);
+                      console.log(`✅ Matched video by title and added ID: ${video.title} -> ${matchedVideo.id}`);
+                    }
+                  }
+                });
+              }
+            });
+          }
+        });
+        
+        // Fetch actual video records if any IDs found
+        if (videoIdsInChapters.length > 0) {
         try {
           const actualVideos = await Video.findAll({
             where: { id: videoIdsInChapters },
@@ -696,17 +723,46 @@ const getCourseById = async (req, res) => {
             sections: chapter.sections ? chapter.sections.map(section => ({
               ...section,
               videos: section.videos ? section.videos.map(video => {
-                const actualVideo = videoMap.get(video.id);
+                // Try to find video by ID first
+                let actualVideo = video.id ? videoMap.get(video.id) : null;
+                
+                // If not found by ID, try to find by title
+                if (!actualVideo && video.title) {
+                  actualVideo = videoMapByTitle.get(video.title.toLowerCase());
+                  if (actualVideo && actualVideo.id) {
+                    // Update video object with found ID
+                    video.id = actualVideo.id;
+                    console.log(`✅ Matched video by title in chapters: ${video.title} -> ${actualVideo.id}`);
+                  }
+                }
+                
                 if (actualVideo) {
                   // Merge chapter video data with actual video data
                   return {
                     ...video,
                     ...actualVideo,
-                    // Preserve chapter-specific data
+                    // Preserve chapter-specific data but use actual video ID
+                    id: actualVideo.id,
                     title: video.title || actualVideo.title,
                     description: video.description || actualVideo.description
                   };
                 }
+                // If video not found in DB, try to find by title from course videos
+                if (!actualVideo && video.title && videoMapByTitle.has(video.title.toLowerCase())) {
+                  actualVideo = videoMapByTitle.get(video.title.toLowerCase());
+                  if (actualVideo && actualVideo.id) {
+                    video.id = actualVideo.id;
+                    console.log(`✅ Matched video by title (fallback): ${video.title} -> ${actualVideo.id}`);
+                    return {
+                      ...video,
+                      ...actualVideo,
+                      id: actualVideo.id,
+                      title: video.title || actualVideo.title,
+                      description: video.description || actualVideo.description
+                    };
+                  }
+                }
+                
                 // If video not found in DB, ensure it has at least fileUrl
                 return {
                   ...video,
@@ -722,6 +778,29 @@ const getCourseById = async (req, res) => {
           console.error('Error fetching videos for chapters:', error);
           // Continue with chapters as-is if video fetch fails
         }
+      } else {
+        // No video IDs in chapters, but we have course videos - try to match by title
+        console.log('No video IDs in chapters, attempting title matching...');
+        courseData.chapters = courseData.chapters.map(chapter => ({
+          ...chapter,
+          sections: chapter.sections ? chapter.sections.map(section => ({
+            ...section,
+            videos: section.videos ? section.videos.map(video => {
+              if (!video.id && video.title) {
+                const matchedVideo = videoMapByTitle.get(video.title.toLowerCase());
+                if (matchedVideo && matchedVideo.id) {
+                  console.log(`✅ Matched video by title (no IDs in chapters): ${video.title} -> ${matchedVideo.id}`);
+                  return {
+                    ...video,
+                    ...matchedVideo,
+                    id: matchedVideo.id
+                  };
+                }
+              }
+              return video;
+            }) : []
+          })) : []
+        }));
       }
     }
     
