@@ -40,7 +40,10 @@ function ensureDirSync(dirPath) {
 // Configure multer for video uploads
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, 'uploads/videos/');
+    const uploadDir = path.join(__dirname, '../../uploads/videos');
+    // Create directory if it doesn't exist
+    ensureDirSync(uploadDir);
+    cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -82,13 +85,47 @@ router.post('/upload', auth, requireTeacher, upload.single('video'), async (req,
       });
     }
 
-    const { title, description, duration, order, isPublished } = req.body;
+    const { title, description, duration, order, isPublished, courseId } = req.body;
+    
+    console.log('Video upload request:', {
+      title,
+      courseId,
+      fileSize: req.file?.size,
+      filename: req.file?.filename
+    });
+    
+    // Validate courseId if provided
+    if (courseId) {
+      try {
+        const course = await Course.findByPk(courseId);
+        if (!course) {
+          return res.status(400).json({
+            success: false,
+            message: 'Course not found'
+          });
+        }
+        // Check if user owns the course
+        if (course.teacherId !== req.user.id && req.user.role !== 'admin') {
+          return res.status(403).json({
+            success: false,
+            message: 'You do not have permission to add videos to this course'
+          });
+        }
+      } catch (e) {
+        console.error('Error validating course:', e);
+        return res.status(500).json({
+          success: false,
+          message: 'Error validating course'
+        });
+      }
+    }
+    
     let resolvedIsPublished = undefined;
     if (typeof isPublished !== 'undefined') {
       resolvedIsPublished = (typeof isPublished === 'string') ? (isPublished === 'true') : Boolean(isPublished);
-    } else if (req.body.courseId) {
+    } else if (courseId) {
       try {
-        const parentCourse = await Course.findByPk(req.body.courseId);
+        const parentCourse = await Course.findByPk(courseId);
         if (parentCourse) {
           resolvedIsPublished = Boolean(parentCourse.isPublished);
         }
@@ -117,11 +154,17 @@ router.post('/upload', auth, requireTeacher, upload.single('video'), async (req,
       fileUrl: originalVariant[0].url,
       fileSize: req.file.size,
       teacherId: req.user.id,
-      courseId: req.body.courseId || null,
+      courseId: courseId || null,
       isPublished: typeof resolvedIsPublished === 'boolean' ? resolvedIsPublished : false,
       quality: originalVariant[0].quality,
       videoVariants: originalVariant,
       processingStatus: 'processing'
+    });
+    
+    console.log('Video created successfully:', {
+      id: video.id,
+      title: video.title,
+      courseId: video.courseId
     });
 
     const videoResponse = video.toJSON();
@@ -157,10 +200,17 @@ router.post('/upload', auth, requireTeacher, upload.single('video'), async (req,
 
   } catch (error) {
     console.error('Error uploading video:', error);
+    console.error('Error stack:', error.stack);
+    console.error('Request body keys:', Object.keys(req.body || {}));
+    console.error('File info:', req.file ? {
+      filename: req.file.filename,
+      size: req.file.size,
+      mimetype: req.file.mimetype
+    } : 'No file');
     res.status(500).json({
       success: false,
       message: 'Failed to upload video',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
