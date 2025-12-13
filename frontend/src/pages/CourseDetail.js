@@ -639,12 +639,13 @@ const CourseDetail = () => {
                                   {section.videos.map((video, videoIndex) => {
                                     const resolvedVideoId = resolveVideoId(video);
                                     // Try multiple ID formats to find progress
-                                    const progressId = resolvedVideoId || video.id;
+                                    // Priority: resolvedVideoId > video.id > video.videoId
+                                    const progressId = resolvedVideoId || video.id || video.videoId;
                                     const progress = userProgress[progressId] || userProgress[String(progressId)];
                                     // Check completion: either isCompleted flag OR watchPercentage >= 90
                                     const isCompleted = progress?.isCompleted || (progress?.watchPercentage >= 90);
                                   const isWatched = progress?.watchPercentage > 0;
-                                  const quizInfo = videoQuizInfo[resolvedVideoId || video.id] || { hasQuiz: false };
+                                  const quizInfo = videoQuizInfo[resolvedVideoId || video.id || video.videoId] || { hasQuiz: false };
 
                                     return (
                                       <React.Fragment key={`${chapterIndex}-${sectionIndex}-${videoIndex}-${resolvedVideoId || video.id || 'noid'}`}>
@@ -896,24 +897,42 @@ const CourseDetail = () => {
                                                 }
                                               }
                                               
-                                              if (!finalVideoId && !isTeacher) {
+                                              // Final check: if still no ID found, try one more time from all sources
+                                              if (!finalVideoId) {
+                                                console.warn('⚠️ Video ID still not found after all attempts');
+                                                console.log('Video object keys:', Object.keys(video));
+                                                console.log('Video object:', video);
+                                                console.log('Course videos:', course.videos?.map(v => ({ id: v.id, title: v.title })));
+                                                console.log('Flat videos:', flatVideos.map(v => ({ id: v.id, title: v.title })));
+                                                
+                                                // Last resort: try to get from video object directly
+                                                if (video.id) {
+                                                  finalVideoId = video.id;
+                                                  console.log('✅ Using video.id as last resort:', finalVideoId);
+                                                } else if (video.videoId) {
+                                                  finalVideoId = video.videoId;
+                                                  console.log('✅ Using video.videoId as last resort:', finalVideoId);
+                                                }
+                                              }
+                                              
+                                              if (!finalVideoId) {
                                                 console.error('❌ All attempts to find video ID failed');
                                                 console.log('Video object:', JSON.stringify(video, null, 2));
                                                 console.log('Course videos count:', course.videos?.length || 0);
                                                 console.log('Flat videos count:', flatVideos.length);
-                                                alert('Video ID not found. Please refresh the page or contact support.');
+                                                alert('Video ID not found. The video may not be properly linked to the course. Please refresh the page or contact support.');
                                                 return;
                                               }
                                               
-                                              // For teachers, try to navigate even without ID (will show error but at least tries)
-                                              const finalHref = finalVideoId ? `${base}${finalVideoId}${suffix}` : (isTeacher ? `${base}${video.id || 'unknown'}${suffix}` : '#');
+                                              // Build final href - never use 'unknown'
+                                              const finalHref = `${base}${finalVideoId}${suffix}`;
                                               
                                               console.log('🚀 Final Video ID:', finalVideoId);
                                               console.log('🚀 Final Href:', finalHref);
                                               
-                                              if (finalHref === '#') {
-                                                console.error('❌ Cannot navigate: no valid href');
-                                                alert('Cannot open video. Please refresh the page.');
+                                              if (!finalVideoId || finalVideoId === 'unknown') {
+                                                console.error('❌ Cannot navigate: invalid video ID');
+                                                alert('Cannot open video: Invalid video ID. Please refresh the page.');
                                                 return;
                                               }
                                               
