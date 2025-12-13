@@ -930,22 +930,20 @@ const CourseDetail = () => {
                                               }
                                             };
                                             
-                                            // Debug: Log button state for ALL videos (first time only)
-                                            React.useEffect(() => {
-                                              if (videoIndex === 0 && sectionIndex === 0 && chapterIndex === 0) {
-                                                console.log('=== FIRST VIDEO BUTTON STATE ===');
-                                                console.log('Video Title:', video.title);
-                                                console.log('Video ID:', video.id);
-                                                console.log('Video ID to use:', videoIdToUse);
-                                                console.log('Resolved Video ID:', resolvedVideoId);
-                                                console.log('Is Locked:', isLocked);
-                                                console.log('Final Is Locked:', finalIsLocked);
-                                                console.log('Is Teacher:', isTeacher);
-                                                console.log('Is Enrolled:', isEnrolled);
-                                                console.log('Target Href:', targetHref);
-                                                console.log('Course Videos:', course.videos?.map(v => ({ id: v.id, title: v.title })));
-                                              }
-                                            }, []);
+                                            // Debug: Log button state for first video only (once per render)
+                                            if (videoIndex === 0 && sectionIndex === 0 && chapterIndex === 0 && !loading) {
+                                              console.log('=== FIRST VIDEO BUTTON STATE ===');
+                                              console.log('Video Title:', video.title);
+                                              console.log('Video ID:', video.id);
+                                              console.log('Video ID to use:', videoIdToUse);
+                                              console.log('Resolved Video ID:', resolvedVideoId);
+                                              console.log('Is Locked:', isLocked);
+                                              console.log('Final Is Locked:', finalIsLocked);
+                                              console.log('Is Teacher:', isTeacher);
+                                              console.log('Is Enrolled:', isEnrolled);
+                                              console.log('Target Href:', targetHref);
+                                              console.log('Course Videos:', course.videos?.map(v => ({ id: v.id, title: v.title })));
+                                            }
                                             
                                             return (
                                               <Button
