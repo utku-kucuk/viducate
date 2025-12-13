@@ -51,9 +51,15 @@ router.post('/:courseId/complete', auth, completeCourse);
 router.get('/teacher/my-courses', auth, requireTeacher, getTeacherCourses);
 router.get('/teacher/students', auth, requireTeacher, getTeacherStudents);
 // Configure multer for thumbnail uploads
+const fs = require('fs');
 const thumbnailStorage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, 'uploads/thumbnails/');
+    const uploadDir = path.join(__dirname, '../../uploads/thumbnails');
+    // Create directory if it doesn't exist
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -79,6 +85,7 @@ const uploadThumbnail = multer({
 router.post('/upload-thumbnail', auth, requireTeacher, uploadThumbnail.single('thumbnail'), async (req, res) => {
   try {
     if (!req.file) {
+      console.error('No file received in thumbnail upload');
       return res.status(400).json({
         success: false,
         message: 'No thumbnail file uploaded'
@@ -86,6 +93,12 @@ router.post('/upload-thumbnail', auth, requireTeacher, uploadThumbnail.single('t
     }
 
     const thumbnailUrl = `/uploads/thumbnails/${req.file.filename}`;
+
+    console.log('Thumbnail uploaded successfully:', {
+      filename: req.file.filename,
+      size: req.file.size,
+      url: thumbnailUrl
+    });
 
     res.json({
       success: true,
@@ -98,9 +111,11 @@ router.post('/upload-thumbnail', auth, requireTeacher, uploadThumbnail.single('t
     });
   } catch (error) {
     console.error('Error uploading thumbnail:', error);
+    console.error('Error stack:', error.stack);
     res.status(500).json({
       success: false,
-      message: 'Failed to upload thumbnail'
+      message: 'Failed to upload thumbnail',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });

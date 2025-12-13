@@ -829,8 +829,8 @@ const CourseDetail = () => {
                                               
                                               // Force console log even if disabled
                                               console.log('=== START BUTTON CLICKED ===');
-                                              console.log('Video:', video);
-                                              console.log('Video ID to use:', videoIdToUse);
+                                              console.log('Video object:', video);
+                                              console.log('Video ID to use (initial):', videoIdToUse);
                                               console.log('Resolved Video ID:', resolvedVideoId);
                                               console.log('Target Href:', targetHref);
                                               console.log('Is Locked:', isLocked);
@@ -853,46 +853,74 @@ const CourseDetail = () => {
                                                 return;
                                               }
                                               
-                                              // Try to find ID one more time with more aggressive search
+                                              // Start with videoIdToUse (already resolved above)
                                               let finalVideoId = videoIdToUse;
                                               
+                                              console.log('🔍 Starting ID search. Initial ID:', finalVideoId);
+                                              
+                                              // If still no ID, try aggressive search (videoIdToUse should already have it, but double-check)
                                               if (!finalVideoId) {
-                                                console.log('🔍 Video ID not found, trying aggressive search...');
+                                                console.warn('⚠️ videoIdToUse is empty, trying aggressive search...');
+                                                console.log('Video object keys:', Object.keys(video));
+                                                console.log('Video object:', video);
                                                 
-                                                // Try video.id directly
+                                                // Priority 1: video.id
                                                 if (video.id) {
-                                                  finalVideoId = video.id;
+                                                  finalVideoId = String(video.id);
                                                   console.log('✅ Found ID in video.id:', finalVideoId);
                                                 }
                                                 
-                                                // Try course.videos
-                                                if (!finalVideoId && Array.isArray(course.videos)) {
+                                                // Priority 2: video.videoId
+                                                if (!finalVideoId && video.videoId) {
+                                                  finalVideoId = String(video.videoId);
+                                                  console.log('✅ Found ID in video.videoId:', finalVideoId);
+                                                }
+                                                
+                                                // Priority 3: course.videos by title
+                                                if (!finalVideoId && Array.isArray(course.videos) && course.videos.length > 0) {
                                                   const matchByTitle = course.videos.find(v => v.title === video.title);
                                                   if (matchByTitle && matchByTitle.id) {
-                                                    finalVideoId = matchByTitle.id;
+                                                    finalVideoId = String(matchByTitle.id);
                                                     console.log('✅ Found ID in course.videos by title:', finalVideoId);
                                                   }
                                                   
-                                                  // Try by fileUrl
+                                                  // Priority 4: course.videos by fileUrl
                                                   if (!finalVideoId && video.fileUrl) {
                                                     const matchByUrl = course.videos.find(v => v.fileUrl === video.fileUrl);
                                                     if (matchByUrl && matchByUrl.id) {
-                                                      finalVideoId = matchByUrl.id;
+                                                      finalVideoId = String(matchByUrl.id);
                                                       console.log('✅ Found ID in course.videos by URL:', finalVideoId);
                                                     }
                                                   }
                                                 }
                                                 
-                                                // Try flatVideos
+                                                // Priority 5: flatVideos by position
                                                 if (!finalVideoId && flatVideos.length > 0) {
-                                                  const matchInFlat = flatVideos.find(v => 
-                                                    (v.title === video.title) || 
-                                                    (v.fileUrl && video.fileUrl && v.fileUrl === video.fileUrl) ||
-                                                    (v.id && video.id && String(v.id) === String(video.id))
-                                                  );
-                                                  if (matchInFlat && matchInFlat.id) {
-                                                    finalVideoId = matchInFlat.id;
-                                                    console.log('✅ Found ID in flatVideos:', finalVideoId);
+                                                  const videoInFlat = flatVideos.find((v, idx) => {
+                                                    if (typeof v._chapterIndex === 'number' && typeof v._sectionIndex === 'number' && typeof v._videoIndex === 'number') {
+                                                      if (v._chapterIndex === chapterIndex && 
+                                                          v._sectionIndex === sectionIndex && 
+                                                          v._videoIndex === videoIndex) {
+                                                        return true;
+                                                      }
+                                                    }
+                                                    return false;
+                                                  });
+                                                  if (videoInFlat && videoInFlat.id) {
+                                                    finalVideoId = String(videoInFlat.id);
+                                                    console.log('✅ Found ID in flatVideos by position:', finalVideoId);
+                                                  }
+                                                  
+                                                  // Priority 6: flatVideos by title/url
+                                                  if (!finalVideoId) {
+                                                    const matchInFlat = flatVideos.find(v => 
+                                                      (v.title === video.title) || 
+                                                      (v.fileUrl && video.fileUrl && v.fileUrl === video.fileUrl)
+                                                    );
+                                                    if (matchInFlat && matchInFlat.id) {
+                                                      finalVideoId = String(matchInFlat.id);
+                                                      console.log('✅ Found ID in flatVideos by title/url:', finalVideoId);
+                                                    }
                                                   }
                                                 }
                                               }
