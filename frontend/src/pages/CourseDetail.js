@@ -52,15 +52,29 @@ const CourseDetail = () => {
 
   // Resolve a real video id from chapter video data produced at course creation
   const resolveVideoId = (chapterVideo) => {
-    if (!course || !Array.isArray(course.videos)) return undefined;
+    if (!course) return undefined;
+
+    // If chapter video already has a valid ID, use it
+    if (chapterVideo?.id) {
+      // Validate it exists in course.videos if available
+      if (Array.isArray(course.videos)) {
+        const validIds = new Set(course.videos.map(v => v.id));
+        if (validIds.has(chapterVideo.id)) {
+          return chapterVideo.id;
+        }
+      } else {
+        // If course.videos not available, trust the ID
+        return chapterVideo.id;
+      }
+    }
+
+    // If course.videos is not available, return undefined
+    if (!Array.isArray(course.videos) || course.videos.length === 0) {
+      return undefined;
+    }
 
     // Build a lookup set of real ids for validation
     const validIds = new Set(course.videos.map(v => v.id));
-
-    // If the chapter video already has an id, ensure it's a real stored video id
-    if (chapterVideo?.id && validIds.has(chapterVideo.id)) {
-      return chapterVideo.id;
-    }
 
     // Try to match by exact title only (no partial matching to avoid false positives)
     // If multiple videos have the same title, use order to distinguish them
@@ -93,10 +107,27 @@ const CourseDetail = () => {
       if (byFile) return byFile.id;
     }
 
+    // Try to match by fileUrl if present
+    if (chapterVideo?.fileUrl) {
+      const byUrl = course.videos.find(v => v.fileUrl === chapterVideo.fileUrl);
+      if (byUrl) return byUrl.id;
+    }
+
     // Last resort: loose match by order if present
     if (typeof chapterVideo?.order === 'number') {
       const byOrder = course.videos.find(v => v.order === chapterVideo.order);
       if (byOrder) return byOrder.id;
+    }
+
+    // If still no match, try to find by position in flatVideos
+    if (flatVideos && flatVideos.length > 0) {
+      // Try to find video by matching all properties
+      const match = flatVideos.find(v => {
+        if (chapterVideo?.title && v.title === chapterVideo.title) return true;
+        if (chapterVideo?.fileUrl && v.fileUrl === chapterVideo.fileUrl) return true;
+        return false;
+      });
+      if (match && match.id) return match.id;
     }
 
     return undefined;
@@ -625,6 +656,13 @@ const CourseDetail = () => {
                                               borderRadius: 1
                                             }
                                           }}
+                                          onClick={(e) => {
+                                            // Prevent ListItem click from interfering with button
+                                            const target = e.target;
+                                            if (target.closest('button')) {
+                                              e.stopPropagation();
+                                            }
+                                          }}
                                         >
                                           <ListItemIcon>
                                             {isCompleted ? (
@@ -675,15 +713,56 @@ const CourseDetail = () => {
                                             const isFile = (video?.type === 'file') || /(\.pdf|\.pptx?|\/uploads\/files\/)/i.test(String(video?.fileUrl || ''));
                                             const base = isFile ? '/file/' : '/video/';
                                             const suffix = adminPreviewFlag ? '?adminPreview=1' : '';
-                                            const targetHref = resolvedVideoId ? `${base}${resolvedVideoId}${suffix}` : '#';
+                                            
+                                            // Try to get video ID from multiple sources
+                                            let videoIdToUse = resolvedVideoId;
+                                            
+                                            // If resolvedVideoId is not available, try to find it in course.videos
+                                            if (!videoIdToUse && Array.isArray(course.videos) && course.videos.length > 0) {
+                                              // Try to match by title
+                                              const matchByTitle = course.videos.find(v => v.title === video.title);
+                                              if (matchByTitle) {
+                                                videoIdToUse = matchByTitle.id;
+                                              } else {
+                                                // Try to match by fileUrl
+                                                if (video.fileUrl) {
+                                                  const matchByUrl = course.videos.find(v => v.fileUrl === video.fileUrl);
+                                                  if (matchByUrl) {
+                                                    videoIdToUse = matchByUrl.id;
+                                                  }
+                                                }
+                                              }
+                                            }
+                                            
+                                            // If still no ID, try to get from flatVideos by position
+                                            if (!videoIdToUse && flatVideos.length > 0) {
+                                              const videoInFlat = flatVideos.find((v, idx) => {
+                                                if (typeof v._chapterIndex === 'number' && typeof v._sectionIndex === 'number' && typeof v._videoIndex === 'number') {
+                                                  if (v._chapterIndex === chapterIndex && 
+                                                      v._sectionIndex === sectionIndex && 
+                                                      v._videoIndex === videoIndex) {
+                                                    return true;
+                                                  }
+                                                }
+                                                return false;
+                                              });
+                                              if (videoInFlat && videoInFlat.id) {
+                                                videoIdToUse = videoInFlat.id;
+                                              }
+                                            }
+                                            
+                                            // Final fallback: use video.id if available
+                                            if (!videoIdToUse && video.id) {
+                                              videoIdToUse = video.id;
+                                            }
+                                            
+                                            const targetHref = videoIdToUse ? `${base}${videoIdToUse}${suffix}` : '#';
                                             
                                             // Check if this is the first video in the course
-                                            // Compare by resolved ID, or by title if ID not resolved yet
                                             const firstVideo = flatVideos.length > 0 ? flatVideos[0] : null;
                                             const isFirstVideo = firstVideo && (
-                                              (resolvedVideoId && String(firstVideo.id) === String(resolvedVideoId)) ||
-                                              (!resolvedVideoId && firstVideo.title === video.title) ||
-                                              (resolvedVideoId && resolveVideoId(firstVideo) === resolvedVideoId) ||
+                                              (videoIdToUse && String(firstVideo.id) === String(videoIdToUse)) ||
+                                              (!videoIdToUse && firstVideo.title === video.title) ||
                                               (videoIndex === 0 && sectionIndex === 0 && chapterIndex === 0)
                                             );
                                             
@@ -691,12 +770,9 @@ const CourseDetail = () => {
                                             const baseLocked = !isTeacher && !isEnrolled;
                                             // If video is completed, always allow access (user can re-enter completed stages)
                                             const videoCompleted = isCompleted || (progress?.watchPercentage >= 90);
-                                            // First video is always unlocked for enrolled users, even if resolvedVideoId is undefined
-                                            // Find video in flatVideos by matching position (chapter/section/video index)
-                                            // This ensures we get the correct video even if same video appears multiple times
-                                            // CRITICAL: Must match by position to handle duplicate videos correctly
+                                            
+                                            // Find video in flatVideos by matching position
                                             const videoInFlat = flatVideos.find((v, idx) => {
-                                              // PRIORITY 1: Match by position (most reliable for duplicate videos)
                                               if (typeof v._chapterIndex === 'number' && typeof v._sectionIndex === 'number' && typeof v._videoIndex === 'number') {
                                                 if (v._chapterIndex === chapterIndex && 
                                                     v._sectionIndex === sectionIndex && 
@@ -704,27 +780,205 @@ const CourseDetail = () => {
                                                   return true;
                                                 }
                                               }
-                                              // If position info not available in flatVideos, cannot reliably match
-                                              // Don't use fallback matching for duplicate videos
                                               return false;
                                             });
+                                            
                                             // Use the found video from flatVideos (has position info) or create one with position info
                                             const videoForUnlock = videoInFlat || { 
                                               ...video, 
                                               _chapterIndex: chapterIndex,
                                               _sectionIndex: sectionIndex,
-                                              _videoIndex: videoIndex
+                                              _videoIndex: videoIndex,
+                                              id: videoIdToUse
                                             };
-                                            const sequentialLocked = !isTeacher && isEnrolled && !isFirstVideo && !videoCompleted && !isVideoUnlocked(resolvedVideoId, videoForUnlock);
-                                            const isLocked = (!resolvedVideoId && !isFirstVideo) || baseLocked || sequentialLocked;
+                                            
+                                            const sequentialLocked = !isTeacher && isEnrolled && !isFirstVideo && !videoCompleted && !isVideoUnlocked(videoIdToUse, videoForUnlock);
+                                            
+                                            // For teachers/owners, always allow access even if ID is not resolved
+                                            // For enrolled students, allow if it's the first video or if ID is resolved
+                                            const isLocked = isTeacher ? false : (
+                                              (!videoIdToUse && !isFirstVideo) || 
+                                              baseLocked || 
+                                              sequentialLocked
+                                            );
+                                            
+                                            // Debug logging
+                                            if (!videoIdToUse && !isTeacher) {
+                                              console.warn('Video ID not resolved:', {
+                                                videoTitle: video.title,
+                                                chapterIndex,
+                                                sectionIndex,
+                                                videoIndex,
+                                                hasVideoId: !!video.id,
+                                                hasResolvedId: !!resolvedVideoId,
+                                                courseVideosCount: course.videos?.length || 0
+                                              });
+                                            }
+                                            
+                                            // Force enable button for teachers/owners even if ID not found
+                                            const shouldEnableButton = isTeacher || videoIdToUse || isFirstVideo;
+                                            const finalIsLocked = isTeacher ? false : (isLocked && !shouldEnableButton);
+                                            
+                                            const handleVideoClick = (e) => {
+                                              // Prevent any default behavior
+                                              if (e) {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                              }
+                                              
+                                              // Force console log even if disabled
+                                              console.log('=== START BUTTON CLICKED ===');
+                                              console.log('Video:', video);
+                                              console.log('Video ID to use:', videoIdToUse);
+                                              console.log('Resolved Video ID:', resolvedVideoId);
+                                              console.log('Target Href:', targetHref);
+                                              console.log('Is Locked:', isLocked);
+                                              console.log('Final Is Locked:', finalIsLocked);
+                                              console.log('Is Teacher:', isTeacher);
+                                              console.log('Is Enrolled:', isEnrolled);
+                                              console.log('Base Locked:', baseLocked);
+                                              console.log('Sequential Locked:', sequentialLocked);
+                                              console.log('Should Enable Button:', shouldEnableButton);
+                                              
+                                              if (finalIsLocked) {
+                                                console.warn('❌ Button is LOCKED');
+                                                if (baseLocked) {
+                                                  alert('Please enroll in the course first.');
+                                                } else if (sequentialLocked) {
+                                                  alert('Please complete previous videos first.');
+                                                } else {
+                                                  alert('Video is locked. Please refresh the page.');
+                                                }
+                                                return;
+                                              }
+                                              
+                                              // Try to find ID one more time with more aggressive search
+                                              let finalVideoId = videoIdToUse;
+                                              
+                                              if (!finalVideoId) {
+                                                console.log('🔍 Video ID not found, trying aggressive search...');
+                                                
+                                                // Try video.id directly
+                                                if (video.id) {
+                                                  finalVideoId = video.id;
+                                                  console.log('✅ Found ID in video.id:', finalVideoId);
+                                                }
+                                                
+                                                // Try course.videos
+                                                if (!finalVideoId && Array.isArray(course.videos)) {
+                                                  const matchByTitle = course.videos.find(v => v.title === video.title);
+                                                  if (matchByTitle && matchByTitle.id) {
+                                                    finalVideoId = matchByTitle.id;
+                                                    console.log('✅ Found ID in course.videos by title:', finalVideoId);
+                                                  }
+                                                  
+                                                  // Try by fileUrl
+                                                  if (!finalVideoId && video.fileUrl) {
+                                                    const matchByUrl = course.videos.find(v => v.fileUrl === video.fileUrl);
+                                                    if (matchByUrl && matchByUrl.id) {
+                                                      finalVideoId = matchByUrl.id;
+                                                      console.log('✅ Found ID in course.videos by URL:', finalVideoId);
+                                                    }
+                                                  }
+                                                }
+                                                
+                                                // Try flatVideos
+                                                if (!finalVideoId && flatVideos.length > 0) {
+                                                  const matchInFlat = flatVideos.find(v => 
+                                                    (v.title === video.title) || 
+                                                    (v.fileUrl && video.fileUrl && v.fileUrl === video.fileUrl) ||
+                                                    (v.id && video.id && String(v.id) === String(video.id))
+                                                  );
+                                                  if (matchInFlat && matchInFlat.id) {
+                                                    finalVideoId = matchInFlat.id;
+                                                    console.log('✅ Found ID in flatVideos:', finalVideoId);
+                                                  }
+                                                }
+                                              }
+                                              
+                                              if (!finalVideoId && !isTeacher) {
+                                                console.error('❌ All attempts to find video ID failed');
+                                                console.log('Video object:', JSON.stringify(video, null, 2));
+                                                console.log('Course videos count:', course.videos?.length || 0);
+                                                console.log('Flat videos count:', flatVideos.length);
+                                                alert('Video ID not found. Please refresh the page or contact support.');
+                                                return;
+                                              }
+                                              
+                                              // For teachers, try to navigate even without ID (will show error but at least tries)
+                                              const finalHref = finalVideoId ? `${base}${finalVideoId}${suffix}` : (isTeacher ? `${base}${video.id || 'unknown'}${suffix}` : '#');
+                                              
+                                              console.log('🚀 Final Video ID:', finalVideoId);
+                                              console.log('🚀 Final Href:', finalHref);
+                                              
+                                              if (finalHref === '#') {
+                                                console.error('❌ Cannot navigate: no valid href');
+                                                alert('Cannot open video. Please refresh the page.');
+                                                return;
+                                              }
+                                              
+                                              console.log('🚀 Attempting navigation to:', finalHref);
+                                              
+                                              try {
+                                                navigate(finalHref);
+                                                console.log('✅ Navigate() called successfully');
+                                              } catch (err) {
+                                                console.error('❌ Navigate error:', err);
+                                                // Fallback to window.location
+                                                console.log('🔄 Falling back to window.location.href');
+                                                window.location.href = finalHref;
+                                              }
+                                            };
+                                            
+                                            // Debug: Log button state for ALL videos (first time only)
+                                            React.useEffect(() => {
+                                              if (videoIndex === 0 && sectionIndex === 0 && chapterIndex === 0) {
+                                                console.log('=== FIRST VIDEO BUTTON STATE ===');
+                                                console.log('Video Title:', video.title);
+                                                console.log('Video ID:', video.id);
+                                                console.log('Video ID to use:', videoIdToUse);
+                                                console.log('Resolved Video ID:', resolvedVideoId);
+                                                console.log('Is Locked:', isLocked);
+                                                console.log('Final Is Locked:', finalIsLocked);
+                                                console.log('Is Teacher:', isTeacher);
+                                                console.log('Is Enrolled:', isEnrolled);
+                                                console.log('Target Href:', targetHref);
+                                                console.log('Course Videos:', course.videos?.map(v => ({ id: v.id, title: v.title })));
+                                              }
+                                            }, []);
+                                            
                                             return (
                                               <Button
                                                 variant="contained"
                                                 size="small"
                                                 startIcon={<PlayIcon />}
-                                                disabled={isLocked}
-                                                title={isLocked ? (baseLocked ? t('courseDetail.enrollNow') : t('courseDetail.unlockPrev')) : ''}
-                                                onClick={() => { if (!isLocked) navigate(targetHref); }}
+                                                disabled={finalIsLocked}
+                                                title={finalIsLocked ? (baseLocked ? t('courseDetail.enrollNow') : (videoIdToUse ? t('courseDetail.unlockPrev') : 'Video ID not found')) : `Click to ${isWatched ? 'continue' : 'start'} video`}
+                                                onClick={(e) => {
+                                                  console.log('🔥 BUTTON onClick FIRED!');
+                                                  handleVideoClick(e);
+                                                }}
+                                                onMouseDown={(e) => {
+                                                  console.log('🖱️ Button mouse down event');
+                                                  e.stopPropagation();
+                                                }}
+                                                onMouseUp={(e) => {
+                                                  console.log('🖱️ Button mouse up event');
+                                                  e.stopPropagation();
+                                                }}
+                                                onPointerDown={(e) => {
+                                                  console.log('👆 Button pointer down event');
+                                                }}
+                                                sx={{
+                                                  pointerEvents: finalIsLocked ? 'none' : 'auto',
+                                                  cursor: finalIsLocked ? 'not-allowed' : 'pointer',
+                                                  '&:hover': {
+                                                    backgroundColor: finalIsLocked ? 'action.disabledBackground' : 'primary.dark'
+                                                  },
+                                                  '&:active': {
+                                                    transform: finalIsLocked ? 'none' : 'scale(0.98)'
+                                                  }
+                                                }}
                                               >
                                                 {isWatched ? t('courseDetail.continue') : t('courseDetail.start')}
                                               </Button>
