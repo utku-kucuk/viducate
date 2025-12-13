@@ -321,14 +321,29 @@ const createCourse = async (req, res) => {
     // Some existing DBs may still enforce NOT NULL on category; use empty string fallback
     const safeCategory = category && String(category).trim() !== '' ? String(category).trim() : '';
     const safeDepartment = department && String(department).trim() !== '' ? String(department).trim() : null;
+    
+    // Ensure chapters is properly formatted as array
+    let safeChapters = [];
+    if (chapters) {
+      if (Array.isArray(chapters)) {
+        safeChapters = chapters;
+      } else if (typeof chapters === 'string') {
+        try {
+          safeChapters = JSON.parse(chapters);
+        } catch (e) {
+          console.error('Error parsing chapters JSON:', e);
+          safeChapters = [];
+        }
+      }
+    }
 
     const course = await Course.create({
       title,
       description,
       category: safeCategory,
       department: safeDepartment,
-      level,
-      chapters: chapters || [],
+      level: level || 'beginner',
+      chapters: safeChapters,
       thumbnail: thumbnail || null,
       teacherId: req.user.id,
       // Always keep unpublished initially; can be published after videos complete processing
@@ -357,9 +372,12 @@ const createCourse = async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating course:', error);
+    console.error('Error stack:', error.stack);
+    console.error('Request body:', req.body);
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
