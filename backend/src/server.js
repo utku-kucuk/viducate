@@ -142,8 +142,24 @@ const adminLimiter = rateLimit({
 });
 
 // Body parsing middleware
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// Skip body parsing for multipart/form-data routes (handled by multer)
+app.use((req, res, next) => {
+  // Skip body parsing for upload routes
+  if (req.path.includes('/upload') || 
+      (req.headers['content-type'] && req.headers['content-type'].includes('multipart/form-data'))) {
+    return next();
+  }
+  // For other content types, use standard body parsers
+  express.json({ limit: '50mb' })(req, res, next);
+});
+app.use((req, res, next) => {
+  // Skip urlencoded for upload routes
+  if (req.path.includes('/upload') || 
+      (req.headers['content-type'] && req.headers['content-type'].includes('multipart/form-data'))) {
+    return next();
+  }
+  express.urlencoded({ extended: true, limit: '50mb' })(req, res, next);
+});
 
 // Static files for uploads
 // Allow embedding uploaded files in iframes from frontend dev origin (to preview PDFs/PPTX)
