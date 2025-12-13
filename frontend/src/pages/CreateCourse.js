@@ -582,7 +582,7 @@ const CreateCourse = () => {
               
               const uploadPromise = axios.post('/api/videos/upload', formData, {
                 headers: {
-                  'Content-Type': 'multipart/form-data',
+                  // Don't set Content-Type manually - let axios set it with boundary
                   'Authorization': `Bearer ${localStorage.getItem('token')}`
                 }
               }).then(response => ({
