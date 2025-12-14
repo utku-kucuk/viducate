@@ -191,9 +191,33 @@ const getVideoResolution = (videoPath) => {
   });
 };
 
+/**
+ * Get video duration in seconds
+ */
+const getVideoDuration = (videoPath) => {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(videoPath, (err, metadata) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+
+      const duration = metadata.format?.duration;
+      if (duration === undefined || duration === null) {
+        reject(new Error('Could not determine video duration'));
+        return;
+      }
+
+      // Duration is in seconds, round to integer
+      resolve(Math.floor(parseFloat(duration)));
+    });
+  });
+};
+
 module.exports = {
   processVideoResolutions,
   checkFFmpeg,
-  getVideoResolution
+  getVideoResolution,
+  getVideoDuration
 };
 

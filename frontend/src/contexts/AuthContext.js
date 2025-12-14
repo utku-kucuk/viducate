@@ -69,9 +69,24 @@ export const AuthProvider = ({ children }) => {
     }
   }, [state.token]);
 
-  // Set up axios response interceptor to handle 401 errors globally (without hard reload)
+  // Set up axios request interceptor to add token to every request
   useEffect(() => {
-    const interceptor = axios.interceptors.response.use(
+    const requestInterceptor = axios.interceptors.request.use(
+      (config) => {
+        // Always get the latest token from localStorage or state
+        const authToken = state.token || localStorage.getItem('token');
+        if (authToken) {
+          config.headers.Authorization = `Bearer ${authToken}`;
+        }
+        return config;
+      },
+      (error) => {
+        return Promise.reject(error);
+      }
+    );
+
+    // Set up axios response interceptor to handle 401 errors globally (without hard reload)
+    const responseInterceptor = axios.interceptors.response.use(
       (response) => response,
       (error) => {
         if (error.response?.status === 401) {
@@ -85,11 +100,12 @@ export const AuthProvider = ({ children }) => {
       }
     );
 
-    // Cleanup interceptor on unmount
+    // Cleanup interceptors on unmount
     return () => {
-      axios.interceptors.response.eject(interceptor);
+      axios.interceptors.request.eject(requestInterceptor);
+      axios.interceptors.response.eject(responseInterceptor);
     };
-  }, []);
+  }, [state.token, dispatch]);
 
   // Optionally validate token on load, but don't block initial render
   useEffect(() => {

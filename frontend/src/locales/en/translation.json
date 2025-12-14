@@ -60,7 +60,9 @@
     "free": "Free",
     "viewCourse": "View Course",
     "emptyTitle": "No courses found matching your criteria",
-    "emptySubtitle": "Try adjusting your search or filters"
+    "emptySubtitle": "Try adjusting your search or filters",
+    "durationHours": "h",
+    "durationMinutes": "m"
   },
   "dashboard": {
     "welcome": "Welcome back, {{name}}!",

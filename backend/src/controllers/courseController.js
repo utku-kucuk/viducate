@@ -59,7 +59,7 @@ const getTeacherCourses = async (req, res) => {
     // Process courses to enhance chapters with video data
     const processedCourses = courses.map(course => {
       const courseData = course.toJSON();
-      
+
       // Parse chapters if they exist
       if (courseData.chapters && typeof courseData.chapters === 'string') {
         try {
@@ -69,7 +69,7 @@ const getTeacherCourses = async (req, res) => {
           courseData.chapters = [];
         }
       }
-      
+
       // Count videos from chapters
       let videoCount = 0;
       if (Array.isArray(courseData.chapters)) {
@@ -83,11 +83,11 @@ const getTeacherCourses = async (req, res) => {
           }
         });
       }
-      
+
       // Set video count (from chapters or direct videos)
       courseData.videos = courseData.videos || [];
       courseData.totalVideos = videoCount || courseData.videos.length;
-      
+
       return courseData;
     });
 
@@ -161,7 +161,7 @@ const getEnrolledCourses = async (req, res) => {
           as: 'students',
           where: { id: req.user.id },
           attributes: [],
-          through: { 
+          through: {
             attributes: ['completedAt', 'progress', 'enrolledAt']
           }
         },
@@ -184,7 +184,7 @@ const getEnrolledCourses = async (req, res) => {
       const enrollment = await UserCourse.findOne({
         where: { userId: req.user.id, courseId: course.id }
       });
-      
+
       const courseData = course.toJSON();
       if (enrollment) {
         courseData.completedAt = enrollment.completedAt;
@@ -321,7 +321,7 @@ const createCourse = async (req, res) => {
     // Some existing DBs may still enforce NOT NULL on category; use empty string fallback
     const safeCategory = category && String(category).trim() !== '' ? String(category).trim() : '';
     const safeDepartment = department && String(department).trim() !== '' ? String(department).trim() : null;
-    
+
     // Ensure chapters is properly formatted as array
     let safeChapters = [];
     if (chapters) {
@@ -361,6 +361,35 @@ const createCourse = async (req, res) => {
         // Do not auto-publish here; publishing will be controlled explicitly after processing
       } catch (linkErr) {
         console.error('Failed to link videos to course:', linkErr);
+      }
+    }
+
+    // Also extract video IDs from chapters structure and link them
+    if (Array.isArray(safeChapters) && safeChapters.length > 0) {
+      const chapterVideoIds = [];
+      safeChapters.forEach(chapter => {
+        if (chapter.sections && Array.isArray(chapter.sections)) {
+          chapter.sections.forEach(section => {
+            if (section.videos && Array.isArray(section.videos)) {
+              section.videos.forEach(video => {
+                if (video.id) {
+                  chapterVideoIds.push(video.id);
+                }
+              });
+            }
+          });
+        }
+      });
+      if (chapterVideoIds.length > 0) {
+        try {
+          await Video.update(
+            { courseId: course.id },
+            { where: { id: chapterVideoIds, teacherId: req.user.id } }
+          );
+          console.log(`Linked ${chapterVideoIds.length} videos from chapters to course ${course.id}`);
+        } catch (linkErr) {
+          console.error('Failed to link chapter videos to course:', linkErr);
+        }
       }
     }
 
@@ -435,13 +464,39 @@ const updateCourse = async (req, res) => {
       if (desired === true) {
         try {
           const vids = await Video.findAll({ where: { courseId: id } });
-          const hasVideos = vids.length > 0;
-          const allCompleted = !hasVideos || vids.every(v => v.processingStatus === 'completed');
-          if (!allCompleted) {
-            return res.status(400).json({
-              success: false,
-              message: 'Course cannot be published until all videos finish processing.'
-            });
+
+          // Check for pending videos
+          const pendingVideos = vids.filter(v => v.processingStatus !== 'completed');
+
+          if (pendingVideos.length > 0) {
+            const now = new Date();
+            const STUCK_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+            const stuckVideos = [];
+            const activeProcessingVideos = [];
+
+            for (const v of pendingVideos) {
+              const lastUpdate = new Date(v.updatedAt || v.createdAt);
+              if ((now - lastUpdate) > STUCK_THRESHOLD_MS) {
+                stuckVideos.push(v);
+              } else {
+                activeProcessingVideos.push(v);
+              }
+            }
+
+            // Auto-fix stuck videos
+            if (stuckVideos.length > 0) {
+              console.log(`Auto-fixing ${stuckVideos.length} stuck videos for course ${id}`);
+              await Promise.all(stuckVideos.map(v => v.update({ processingStatus: 'completed' })));
+            }
+
+            // If we still have active processing videos, block publish
+            if (activeProcessingVideos.length > 0) {
+              const names = activeProcessingVideos.map(v => v.title).join(', ');
+              return res.status(400).json({
+                success: false,
+                message: `Course cannot be published yet. The following videos are still processing: ${names}`
+              });
+            }
           }
         } catch (e) {
           console.error('Failed to validate video processing before publish:', e);
@@ -452,7 +507,7 @@ const updateCourse = async (req, res) => {
     }
 
     console.log('Update data:', updateData);
-    
+
     // Only update if there's something to update
     if (Object.keys(updateData).length === 0) {
       return res.json({
@@ -461,8 +516,37 @@ const updateCourse = async (req, res) => {
         message: 'No updates needed'
       });
     }
-    
+
     await course.update(updateData);
+
+    // Extract and link video IDs from chapters structure
+    if (updateData.chapters && Array.isArray(updateData.chapters)) {
+      const chapterVideoIds = [];
+      updateData.chapters.forEach(chapter => {
+        if (chapter.sections && Array.isArray(chapter.sections)) {
+          chapter.sections.forEach(section => {
+            if (section.videos && Array.isArray(section.videos)) {
+              section.videos.forEach(video => {
+                if (video.id) {
+                  chapterVideoIds.push(video.id);
+                }
+              });
+            }
+          });
+        }
+      });
+      if (chapterVideoIds.length > 0) {
+        try {
+          await Video.update(
+            { courseId: id },
+            { where: { id: chapterVideoIds, teacherId: req.user.id } }
+          );
+          console.log(`Linked ${chapterVideoIds.length} videos from chapters to course ${id}`);
+        } catch (linkErr) {
+          console.error('Failed to link chapter videos to course:', linkErr);
+        }
+      }
+    }
 
     // If publish status changed, propagate to videos of this course
     if (isPublished !== undefined) {
@@ -483,7 +567,7 @@ const updateCourse = async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating course:', error);
-    
+
     // Handle validation errors specifically
     if (error.name === 'SequelizeValidationError') {
       return res.status(400).json({
@@ -495,7 +579,7 @@ const updateCourse = async (req, res) => {
         }))
       });
     }
-    
+
     res.status(500).json({
       success: false,
       message: 'Internal server error',
@@ -562,7 +646,7 @@ const getCourseById = async (req, res) => {
     const isAdmin = req.user.role === 'admin';
     const adminPreview = isAdmin && (req.query.adminPreview === '1' || req.query.adminPreview === 'true');
 
-  const course = await Course.findByPk(id, {
+    const course = await Course.findByPk(id, {
       include: [
         {
           model: User,
@@ -621,7 +705,7 @@ const getCourseById = async (req, res) => {
     const courseData = course.toJSON();
     // Only reflect real enrollment; adminPreview does not equal enrollment
     courseData.isEnrolled = !!isEnrolled;
-    
+
     // Add completion status if enrolled
     if (isEnrolled) {
       const enrollment = await UserCourse.findOne({
@@ -633,7 +717,7 @@ const getCourseById = async (req, res) => {
         courseData.enrollmentProgress = enrollment.progress || 0;
       }
     }
-    
+
     // Ensure chapters are properly parsed if they exist
     if (courseData.chapters && typeof courseData.chapters === 'string') {
       try {
@@ -643,60 +727,60 @@ const getCourseById = async (req, res) => {
         courseData.chapters = [];
       }
     }
-    
-      // Enhance chapters with actual video data from Video model
-      if (Array.isArray(courseData.chapters)) {
-        // First, get all videos for this course from database
-        const courseVideos = await Video.findAll({
-          where: { courseId: id },
-          attributes: ['id', 'title', 'fileUrl', 'videoVariants', 'quality', 'duration', 'description', 'order']
-        });
-        
-        // Create a map of videos by title (for matching when ID is missing)
-        const videoMapByTitle = new Map();
-        const videoMapById = new Map();
-        courseVideos.forEach(video => {
-          const videoData = video.toJSON();
-          if (videoData.title) {
-            videoMapByTitle.set(videoData.title.toLowerCase(), videoData);
-          }
-          if (videoData.id) {
-            videoMapById.set(videoData.id, videoData);
-          }
-        });
-        
-        // Get all video IDs from chapters (if any)
-        const videoIdsInChapters = [];
-        courseData.chapters.forEach(chapter => {
-          if (Array.isArray(chapter.sections)) {
-            chapter.sections.forEach(section => {
-              if (Array.isArray(section.videos)) {
-                section.videos.forEach(video => {
-                  if (video.id) {
-                    videoIdsInChapters.push(video.id);
-                  } else if (video.title) {
-                    // Try to find video by title and add ID
-                    const matchedVideo = videoMapByTitle.get(video.title.toLowerCase());
-                    if (matchedVideo && matchedVideo.id) {
-                      video.id = matchedVideo.id;
-                      videoIdsInChapters.push(matchedVideo.id);
-                      console.log(`✅ Matched video by title and added ID: ${video.title} -> ${matchedVideo.id}`);
-                    }
+
+    // Enhance chapters with actual video data from Video model
+    if (Array.isArray(courseData.chapters)) {
+      // First, get all videos for this course from database
+      const courseVideos = await Video.findAll({
+        where: { courseId: id },
+        attributes: ['id', 'title', 'fileUrl', 'videoVariants', 'quality', 'duration', 'description', 'order']
+      });
+
+      // Create a map of videos by title (for matching when ID is missing)
+      const videoMapByTitle = new Map();
+      const videoMapById = new Map();
+      courseVideos.forEach(video => {
+        const videoData = video.toJSON();
+        if (videoData.title) {
+          videoMapByTitle.set(videoData.title.toLowerCase(), videoData);
+        }
+        if (videoData.id) {
+          videoMapById.set(videoData.id, videoData);
+        }
+      });
+
+      // Get all video IDs from chapters (if any)
+      const videoIdsInChapters = [];
+      courseData.chapters.forEach(chapter => {
+        if (Array.isArray(chapter.sections)) {
+          chapter.sections.forEach(section => {
+            if (Array.isArray(section.videos)) {
+              section.videos.forEach(video => {
+                if (video.id) {
+                  videoIdsInChapters.push(video.id);
+                } else if (video.title) {
+                  // Try to find video by title and add ID
+                  const matchedVideo = videoMapByTitle.get(video.title.toLowerCase());
+                  if (matchedVideo && matchedVideo.id) {
+                    video.id = matchedVideo.id;
+                    videoIdsInChapters.push(matchedVideo.id);
+                    console.log(`✅ Matched video by title and added ID: ${video.title} -> ${matchedVideo.id}`);
                   }
-                });
-              }
-            });
-          }
-        });
-        
-        // Fetch actual video records if any IDs found
-        if (videoIdsInChapters.length > 0) {
+                }
+              });
+            }
+          });
+        }
+      });
+
+      // Fetch actual video records if any IDs found
+      if (videoIdsInChapters.length > 0) {
         try {
           const actualVideos = await Video.findAll({
             where: { id: videoIdsInChapters },
             attributes: ['id', 'title', 'fileUrl', 'videoVariants', 'quality', 'duration', 'description']
           });
-          
+
           // Create a map for quick lookup
           const videoMap = new Map();
           actualVideos.forEach(video => {
@@ -705,8 +789,8 @@ const getCourseById = async (req, res) => {
             try {
               videoData.availableQualities = video.getAvailableQualities();
               videoData.selectedUrl = video.getVideoUrl() || videoData.fileUrl;
-              videoData.currentQuality = videoData.availableQualities.length > 0 
-                ? videoData.availableQualities[videoData.availableQualities.length - 1] 
+              videoData.currentQuality = videoData.availableQualities.length > 0
+                ? videoData.availableQualities[videoData.availableQualities.length - 1]
                 : videoData.quality || null;
             } catch (error) {
               console.error('Error processing video in chapters:', error);
@@ -716,7 +800,7 @@ const getCourseById = async (req, res) => {
             }
             videoMap.set(videoData.id, videoData);
           });
-          
+
           // Update chapters with actual video data
           courseData.chapters = courseData.chapters.map(chapter => ({
             ...chapter,
@@ -725,7 +809,7 @@ const getCourseById = async (req, res) => {
               videos: section.videos ? section.videos.map(video => {
                 // Try to find video by ID first
                 let actualVideo = video.id ? videoMap.get(video.id) : null;
-                
+
                 // If not found by ID, try to find by title
                 if (!actualVideo && video.title) {
                   actualVideo = videoMapByTitle.get(video.title.toLowerCase());
@@ -735,7 +819,7 @@ const getCourseById = async (req, res) => {
                     console.log(`✅ Matched video by title in chapters: ${video.title} -> ${actualVideo.id}`);
                   }
                 }
-                
+
                 if (actualVideo) {
                   // Merge chapter video data with actual video data
                   return {
@@ -762,7 +846,7 @@ const getCourseById = async (req, res) => {
                     };
                   }
                 }
-                
+
                 // If video not found in DB, ensure it has at least fileUrl
                 return {
                   ...video,
@@ -803,9 +887,9 @@ const getCourseById = async (req, res) => {
         }));
       }
     }
-    
+
     console.log('Course data with chapters:', courseData.chapters);
-    
+
     res.json({
       success: true,
       data: courseData

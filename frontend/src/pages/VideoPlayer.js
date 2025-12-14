@@ -20,7 +20,7 @@ import {
   FormControlLabel,
   Divider
 } from '@mui/material';
-import { 
+import {
   ArrowBack,
   PlayArrow as PlayIcon,
   SkipNext as NextIcon,
@@ -38,7 +38,7 @@ const VideoPlayer = () => {
   const navigate = useNavigate();
   const { user } = useAuth?.() || { user: null };
   const adminPreview = new URLSearchParams(location.search).get('adminPreview') === '1';
-  
+
   // Video data states
   const [videoData, setVideoData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -51,17 +51,17 @@ const VideoPlayer = () => {
   const [currentVideoUrl, setCurrentVideoUrl] = useState(null);
   const [qualityMenuAnchor, setQualityMenuAnchor] = useState(null);
   const isQualityMenuOpen = Boolean(qualityMenuAnchor);
-  
+
   // Access gating
   const [accessAllowed, setAccessAllowed] = useState(true);
   const [gatingChecked, setGatingChecked] = useState(false);
-  
+
   // Player states
   const [player, setPlayer] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  
+
   // Progress tracking states
   const [watchedSegments, setWatchedSegments] = useState([]); // permanent watched
   const [currentWatchSegment, setCurrentWatchSegment] = useState(null); // active session
@@ -84,14 +84,14 @@ const VideoPlayer = () => {
   const [completingCourse, setCompletingCourse] = useState(false);
   const [courseCompleted, setCourseCompleted] = useState(false);
   const [completionMessage, setCompletionMessage] = useState('');
-  
+
 
   // Refs to avoid stale closures inside event handlers
   const videoRef = useRef(null);
-  
+
   const sessionStartRef = useRef(null);
   const lastTimeRef = useRef(0);
-  
+
   // UI states
   const [notes, setNotes] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
@@ -110,6 +110,21 @@ const VideoPlayer = () => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Helper function to detect if content is a file (PDF, etc) vs video
+  const isFileContent = (content) => {
+    if (!content) return false;
+    if (content.type === 'file') return true;
+    const fileUrl = String(content.fileUrl || '');
+    return /(\.pdf|\.pptx?|\/uploads\/files\/)/i.test(fileUrl);
+  };
+
+  // Helper to get the correct route for content
+  const getContentRoute = (content) => {
+    if (!content?.id) return null;
+    const base = isFileContent(content) ? '/file/' : '/video/';
+    return `${base}${content.id}${adminPreview ? '?adminPreview=1' : ''}`;
   };
 
   // Handle quality change
@@ -144,7 +159,7 @@ const VideoPlayer = () => {
         videoEl.addEventListener('loadeddata', () => {
           videoEl.currentTime = Math.min(resumeTime, videoEl.duration || 0);
           if (wasPlaying) {
-            videoEl.play().catch(() => {});
+            videoEl.play().catch(() => { });
           }
         }, { once: true });
       }
@@ -245,10 +260,15 @@ const VideoPlayer = () => {
 
       // Strict sequential gating and enrollment/ownership requirement
       if (!adminPreview && !(enrolled || isOwner)) {
-        // Not enrolled: block access
+        // Not enrolled and not owner: block access
         setAccessAllowed(false);
         setGatingChecked(true);
-      } else if (!adminPreview && (enrolled || isOwner)) {
+      } else if (isOwner || adminPreview) {
+        // Course owner or admin preview: full access, no sequential gating
+        setAccessAllowed(true);
+        setGatingChecked(true);
+      } else if (enrolled) {
+        // Enrolled student: apply sequential gating
         try {
           // Fetch progress for the entire course once
           const pgResp = await axios.get(`/api/progress/course/${courseId}`);
@@ -256,7 +276,7 @@ const VideoPlayer = () => {
           const progressMap = {};
           (Array.isArray(list) ? list : []).forEach(p => { if (p?.videoId) progressMap[p.videoId] = p; });
           // Fetch quiz info for all videos (parallel)
-          const quizPromises = allVideos.map(v => 
+          const quizPromises = allVideos.map(v =>
             axios.get(`/api/quizzes/video/${v.id}`)
               .then(r => ({ videoId: v.id, info: r.data || { hasQuiz: false } }))
               .catch(() => ({ videoId: v.id, info: { hasQuiz: false } }))
@@ -264,7 +284,7 @@ const VideoPlayer = () => {
           const quizResults = await Promise.all(quizPromises);
           const quizMap = {};
           quizResults.forEach(r => { quizMap[r.videoId] = r.info; });
-          
+
           // Build ordered items: for each video, then its quiz if assigned
           const items = [];
           allVideos.forEach(v => {
@@ -280,7 +300,7 @@ const VideoPlayer = () => {
               });
             }
           });
-          
+
           const isItemCompleted = (item) => {
             if (item.kind === 'video') {
               const p = progressMap[item.id];
@@ -292,7 +312,7 @@ const VideoPlayer = () => {
             }
             return false;
           };
-          
+
           let firstIncomplete = items.length;
           for (let i = 0; i < items.length; i++) {
             if (!isItemCompleted(items[i])) { firstIncomplete = i; break; }
@@ -308,7 +328,7 @@ const VideoPlayer = () => {
           setGatingChecked(true);
         }
       } else {
-        // Not applicable (admin preview or not enrolled)
+        // Fallback: allow access
         setAccessAllowed(true);
         setGatingChecked(true);
       }
@@ -387,17 +407,17 @@ const VideoPlayer = () => {
           const progress = pgResp?.data?.progress || null;
           if (progress) {
             setNotes(progress.notes || '');
-          const baseDuration = typeof video?.duration === 'number' && video.duration > 0 ? video.duration : duration;
-          const sanitized = mergeSegments(clampSegmentsToDuration(progress.watchedSegments || [], baseDuration));
-          const totalWatched = sanitized.reduce((sum, s) => sum + (s.end - s.start), 0);
-          const pct = baseDuration > 0 ? (totalWatched / baseDuration) * 100 : 0;
-          setCurrentProgress(Math.min(Math.max(pct, 0), 100));
-          setIsCompleted(Boolean(progress.isCompleted));
-          setWatchedSegments(sanitized);
-          setMaxWatchedTime(totalWatched);
-          // compute resume point from max end of segments
-          const maxEnd = sanitized.reduce((mx, s) => Math.max(mx, s.end), 0);
-          setResumeAt(Math.min(Math.max(maxEnd - 1, 0), baseDuration || 0));
+            const baseDuration = typeof video?.duration === 'number' && video.duration > 0 ? video.duration : duration;
+            const sanitized = mergeSegments(clampSegmentsToDuration(progress.watchedSegments || [], baseDuration));
+            const totalWatched = sanitized.reduce((sum, s) => sum + (s.end - s.start), 0);
+            const pct = baseDuration > 0 ? (totalWatched / baseDuration) * 100 : 0;
+            setCurrentProgress(Math.min(Math.max(pct, 0), 100));
+            setIsCompleted(Boolean(progress.isCompleted));
+            setWatchedSegments(sanitized);
+            setMaxWatchedTime(totalWatched);
+            // compute resume point from max end of segments
+            const maxEnd = sanitized.reduce((mx, s) => Math.max(mx, s.end), 0);
+            setResumeAt(Math.min(Math.max(maxEnd - 1, 0), baseDuration || 0));
             if (progress.isCompleted === true && videoId && !hasRefreshedSidebarForCompletionRef.current[videoId]) {
               hasRefreshedSidebarForCompletionRef.current[videoId] = true;
               setProgressVersion(v => v + 1);
@@ -408,6 +428,12 @@ const VideoPlayer = () => {
         console.error('Failed to fetch progress for video:', err);
       }
 
+      console.log('[VideoPlayer] Video data loaded:', {
+        videoId: video.id,
+        courseId: video.courseId,
+        title: video.title
+      });
+
       if (video.courseId) {
         await fetchCourseData(video.courseId);
         // Check if this is the last video and if course can be completed
@@ -415,6 +441,8 @@ const VideoPlayer = () => {
         if (!nextVideo) {
           checkCourseCompletionStatus(video.courseId, videoId);
         }
+      } else {
+        console.warn('[VideoPlayer] Video has no courseId - sidebar will not show');
       }
 
       // Fetch quiz info for this video
@@ -495,11 +523,11 @@ const VideoPlayer = () => {
       if (token) {
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       }
-      
+
       // Get course data
       const courseResp = await axios.get(`/api/courses/${courseId}`);
       const course = courseResp?.data?.data;
-      
+
       // Get all videos in course
       let allVideos = [];
       if (course.chapters && Array.isArray(course.chapters)) {
@@ -519,11 +547,11 @@ const VideoPlayer = () => {
         allVideos = course.videos;
       }
       allVideos.sort((a, b) => (a.order || 0) - (b.order || 0));
-      
+
       // Check if current video is the last one
       const currentIndex = allVideos.findIndex(v => String(v.id) === String(currentVideoId));
       const isLast = currentIndex === allVideos.length - 1;
-      
+
       if (isLast) {
         // Get all progress
         const contentIds = allVideos.map(v => v.id).filter(Boolean);
@@ -533,7 +561,7 @@ const VideoPlayer = () => {
         progressList.forEach(p => {
           if (p.videoId) progressMap[p.videoId] = p;
         });
-        
+
         // Check if all videos/files are completed
         let allCompleted = true;
         for (const video of allVideos) {
@@ -544,7 +572,7 @@ const VideoPlayer = () => {
             break;
           }
         }
-        
+
         // Check required quizzes
         if (allCompleted) {
           for (const video of allVideos) {
@@ -560,7 +588,7 @@ const VideoPlayer = () => {
             }
           }
         }
-        
+
         setCanCompleteCourse(allCompleted);
       } else {
         setCanCompleteCourse(false);
@@ -573,20 +601,20 @@ const VideoPlayer = () => {
 
   const handleCompleteCourse = async () => {
     if (!videoData?.courseId) return;
-    
+
     try {
       setCompletingCourse(true);
       const token = localStorage.getItem('token');
       if (token) {
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       }
-      
+
       const response = await axios.post(`/api/courses/${videoData.courseId}/complete`);
-      
+
       if (response.data.success) {
         setCourseCompleted(true);
         setCompletionMessage('Tebrikler! Kursu tamamladınız.');
-        
+
         // Redirect to my learnings after 5 seconds
         setTimeout(() => {
           navigate('/my-learnings');
@@ -732,19 +760,19 @@ const VideoPlayer = () => {
     const now = Date.now();
     const timeSinceLastStall = now - lastStallTimeRef.current;
     lastStallTimeRef.current = now;
-    
+
     console.warn('Video stalled at:', video.currentTime, 'Network state:', video.networkState);
-    
+
     // Only retry if stalled for more than 3 seconds and haven't retried too many times
     if (timeSinceLastStall > 3000 && retryCountRef.current < 3) {
       retryCountRef.current++;
       const currentTime = video.currentTime;
       const currentSrc = video.src;
-      
+
       // Try to reload the video
       console.log(`Retrying video load (attempt ${retryCountRef.current})...`);
       video.load();
-      
+
       // Try to resume from where we were
       setTimeout(() => {
         if (videoRef.current && !isNaN(currentTime)) {
@@ -841,7 +869,8 @@ const VideoPlayer = () => {
     }
     await saveProgress();
     if (nextVideo) {
-      navigate(`/video/${nextVideo.id}${adminPreview ? '?adminPreview=1' : ''}`);
+      const route = getContentRoute(nextVideo);
+      if (route) navigate(route);
     }
   };
 
@@ -950,7 +979,7 @@ const VideoPlayer = () => {
             setCurrentVideoUrl(vd.selectedUrl || vd.fileUrl);
           }
         }
-      }).catch(() => {});
+      }).catch(() => { });
     }, 6000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1010,8 +1039,8 @@ const VideoPlayer = () => {
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
       {/* Course Sidebar */}
-      <CourseSidebar 
-        courseData={courseData} 
+      <CourseSidebar
+        courseData={courseData}
         currentVideoId={videoId}
         refreshKey={progressVersion}
         readonly={readonlyMode}
@@ -1022,7 +1051,7 @@ const VideoPlayer = () => {
           navigate(`${route}${video.id}${adminPreview ? '?adminPreview=1' : ''}`);
         }}
       />
-      
+
       {/* Main Content */}
       <Box sx={{ flex: 1, overflow: 'auto' }}>
         <Container maxWidth="lg" sx={{ mt: 4 }}>
@@ -1056,317 +1085,318 @@ const VideoPlayer = () => {
           </Box>
 
           <Box sx={{ display: 'flex', gap: 3 }}>
-        {/* Main Content */}
-        <Box sx={{ flex: 1 }}>
-          {/* Video Player */}
-          <Box sx={{ mb: 3 }}>
-            <Box sx={{ position: 'relative' }}>
-              <video
-                ref={videoRef}
-                id={`videojs-player-${videoId}`}
-                className="native-player"
-                controls
-                playsInline
-                preload="auto"
-                src={currentVideoUrl || ''}
-                style={{ width: '100%', height: 'auto', maxHeight: '70vh' }}
-                onLoadedMetadata={handleVideoLoad}
-                onTimeUpdate={handleVideoTimeUpdate}
-                onPlay={handleVideoPlay}
-                onPause={handleVideoPause}
-                onEnded={handleVideoEnded}
-                onSeeking={handleVideoSeeking}
-                onSeeked={handleVideoSeeked}
-                onWaiting={handleVideoWaiting}
-                onStalled={handleVideoStalled}
-                onError={handleVideoError}
-                onCanPlay={handleVideoCanPlay}
-                onProgress={handleVideoProgress}
-              />
+            {/* Main Content */}
+            <Box sx={{ flex: 1 }}>
+              {/* Video Player */}
+              <Box sx={{ mb: 3 }}>
+                <Box sx={{ position: 'relative' }}>
+                  <video
+                    ref={videoRef}
+                    id={`videojs-player-${videoId}`}
+                    className="native-player"
+                    controls
+                    playsInline
+                    preload="auto"
+                    src={currentVideoUrl || ''}
+                    style={{ width: '100%', height: 'auto', maxHeight: '70vh' }}
+                    onLoadedMetadata={handleVideoLoad}
+                    onTimeUpdate={handleVideoTimeUpdate}
+                    onPlay={handleVideoPlay}
+                    onPause={handleVideoPause}
+                    onEnded={handleVideoEnded}
+                    onSeeking={handleVideoSeeking}
+                    onSeeked={handleVideoSeeked}
+                    onWaiting={handleVideoWaiting}
+                    onStalled={handleVideoStalled}
+                    onError={handleVideoError}
+                    onCanPlay={handleVideoCanPlay}
+                    onProgress={handleVideoProgress}
+                  />
 
-              {/* In-player Quality Menu Overlay */}
-              {availableQualities.length > 1 && !isProcessing && (
-                <Box sx={{ position: 'absolute', right: 8, top: 8, zIndex: 20, pointerEvents: 'auto' }}>
-                  <IconButton 
-                    size="small" 
-                    onClick={handleOpenQualityMenu} 
-                    sx={{ bgcolor: 'rgba(0,0,0,0.5)', color: '#fff', '&:hover': { bgcolor: 'rgba(0,0,0,0.7)' } }}
-                  >
-                    <SettingsIcon fontSize="small" />
-                  </IconButton>
-                  <Menu
-                    anchorEl={qualityMenuAnchor}
-                    open={isQualityMenuOpen}
-                    onClose={handleCloseQualityMenu}
-                    anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
-                    transformOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                    MenuListProps={{ dense: true }}
-                  >
-                    {availableQualities.map((q) => (
-                      <MenuItem 
-                        key={q} 
-                        selected={q === selectedQuality}
-                        onClick={() => { handleQualityChange(q); handleCloseQualityMenu(); }}
+                  {/* In-player Quality Menu Overlay */}
+                  {availableQualities.length > 1 && !isProcessing && (
+                    <Box sx={{ position: 'absolute', right: 8, top: 8, zIndex: 20, pointerEvents: 'auto' }}>
+                      <IconButton
+                        size="small"
+                        onClick={handleOpenQualityMenu}
+                        sx={{ bgcolor: 'rgba(0,0,0,0.5)', color: '#fff', '&:hover': { bgcolor: 'rgba(0,0,0,0.7)' } }}
                       >
-                        {q}
-                      </MenuItem>
-                    ))}
-                  </Menu>
-                </Box>
-              )}
-              {isProcessing && (
-                <Box sx={{ position: 'absolute', right: 8, top: 8, zIndex: 20 }}>
-                  <Chip size="small" color="warning" label="Processing..." />
-                </Box>
-              )}
+                        <SettingsIcon fontSize="small" />
+                      </IconButton>
+                      <Menu
+                        anchorEl={qualityMenuAnchor}
+                        open={isQualityMenuOpen}
+                        onClose={handleCloseQualityMenu}
+                        anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+                        transformOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                        MenuListProps={{ dense: true }}
+                      >
+                        {availableQualities.map((q) => (
+                          <MenuItem
+                            key={q}
+                            selected={q === selectedQuality}
+                            onClick={() => { handleQualityChange(q); handleCloseQualityMenu(); }}
+                          >
+                            {q}
+                          </MenuItem>
+                        ))}
+                      </Menu>
+                    </Box>
+                  )}
+                  {isProcessing && (
+                    <Box sx={{ position: 'absolute', right: 8, top: 8, zIndex: 20 }}>
+                      <Chip size="small" color="warning" label="Processing..." />
+                    </Box>
+                  )}
 
-              {/* Custom Progress Bar Overlay */}
-              <Box sx={{
-                position: 'absolute',
-                bottom: 0,
-                left: 0,
-                right: 0,
-                height: '40px',
-                background: 'linear-gradient(transparent, rgba(0,0,0,0.7))',
-                pointerEvents: 'none',
-                zIndex: 10
-              }}>
-                <Box sx={{
-                  position: 'absolute',
-                  bottom: '8px',
-                  left: '12px',
-                  right: '12px',
-                  height: '4px',
-                  backgroundColor: 'rgba(255,255,255,0.2)',
-                  borderRadius: '2px',
-                  overflow: 'hidden'
-                }}>
-                  {getAllWatchedForCalc().map((segment, index) => {
-                    const startPercent = duration > 0 ? (segment.start / duration) * 100 : 0;
-                    const endPercent = duration > 0 ? (segment.end / duration) * 100 : 0;
-                    const width = Math.max(0, endPercent - startPercent);
-                    return (
-                      <Box
-                        key={`mini-${index}`}
-                        sx={{
-                          position: 'absolute',
-                          left: `${startPercent}%`,
-                          width: `${width}%`,
-                          height: '100%',
-                          backgroundColor: '#fff',
-                          borderRadius: '2px'
-                        }}
-                      />
-                    );
-                  })}
-                </Box>
-              </Box>
-            </Box>
-          </Box>
-
-          {/* Next content button (always enabled after video completion) */}
-          {courseCompleted ? (
-            <Box sx={{ mb: 3, textAlign: 'center' }}>
-              <Alert severity="success" sx={{ mb: 2 }}>
-                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1 }}>
-                  {completionMessage || 'Tebrikler! Kursu tamamladınız.'}
-                </Typography>
-                <Typography variant="body2">
-                  5 saniye sonra My Learnings sayfasına yönlendirileceksiniz...
-                </Typography>
-              </Alert>
-            </Box>
-          ) : isCompleted && (nextVideo || quizInfo.hasQuiz || (canCompleteCourse && !nextVideo && !quizInfo.hasQuiz)) && (
-            <Box sx={{ mb: 3, textAlign: 'center' }}>
-              {(() => {
-                // Show "Complete Course" button if this is the last content, no quiz, and all content is completed
-                if (canCompleteCourse && !nextVideo && !quizInfo.hasQuiz) {
-                  return (
-                    <Button
-                      variant="contained"
-                      color="success"
-                      size="large"
-                      onClick={handleCompleteCourse}
-                      disabled={completingCourse}
-                      sx={{
-                        px: 4,
-                        py: 1.5,
-                        fontSize: '1.1rem',
-                        fontWeight: 'bold'
-                      }}
-                    >
-                      {completingCourse ? 'Tamamlanıyor...' : 'Kursu Tamamla'}
-                    </Button>
-                  );
-                }
-                
-                // Show quiz or next video button (video is completed, so button is always enabled)
-                return (
-                  <Button
-                    variant="contained"
-                    size="large"
-                    startIcon={<NextIcon />}
-                    onClick={() => {
-                      if (quizInfo.hasQuiz) {
-                        navigate(`/quiz/${quizInfo.quizId}?videoId=${videoId}`);
-                      } else if (nextVideo?.id) {
-                        navigate(`/video/${nextVideo.id}${adminPreview ? '?adminPreview=1' : ''}`);
-                      } else if (videoData?.courseId) {
-                        navigate(`/course/${videoData.courseId}${adminPreview ? '?adminPreview=1' : ''}`);
-                      }
-                    }}
-                    sx={{
-                      px: 4,
-                      py: 1.5,
-                      fontSize: '1.1rem',
-                      fontWeight: 'bold',
-                      bgcolor: 'success.main',
-                      '&:hover': { bgcolor: 'success.dark' }
-                    }}
-                  >
-                    {t('videoPlayer.goToNext')}
-                  </Button>
-                );
-              })()}
-              {!canCompleteCourse && (
-                <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
-                  {t('videoPlayer.nextValue', { value: (quizInfo.hasQuiz ? `${t('courseDetail.quizTitle', { title: quizInfo.quizTitle || 'Chapter quiz' })}` : (nextVideo ? nextVideo.title : '—')) })}
-                </Typography>
-              )}
-            </Box>
-          )}
-
-          {/* Auto proceed when video fully completed */}
-          {isCompleted && (quizInfo.hasQuiz || nextVideo) && (
-            <Box sx={{ display: 'none' }}>
-              {/* noop marker; effect handled below */}
-            </Box>
-          )}
-
-          {/* Remove course completion banner below top button */}
-          {/* Keep a minimal next label already shown above */}
-
-          {/* If still want to show coming next video name when quiz not present */}
-          {!quizInfo.hasQuiz && nextVideo && (
-            <Box sx={{ mb: 2, textAlign: 'center' }}>
-                <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
-                  Next: {nextVideo.title}
-                </Typography>
-            </Box>
-          )}
-
-          {/* Progress Information */}
-          <Paper sx={{ p: 2, mb: 3 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-              <Typography variant="h6">{t('videoPlayer.progressTitle')}</Typography>
-              {isCompleted && (
-                <Chip label={t('videoPlayer.completedBadge')} color="success" variant="filled" sx={{ fontWeight: 'bold' }} />
-              )}
-            </Box>
-            <Box sx={{ mb: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                <Typography variant="body2" color="textSecondary"><strong>{t('videoPlayer.progressSummary')}</strong></Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Typography variant="body2" color="textSecondary">{t('videoPlayer.videoWatched')}</Typography>
-                  <Box sx={{ width: 20, height: 20, border: '2px solid #ccc', borderRadius: '3px', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: isCompleted ? '#4caf50' : 'transparent', color: isCompleted ? 'white' : 'transparent' }}>
-                    {isCompleted && '✓'}
+                  {/* Custom Progress Bar Overlay */}
+                  <Box sx={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    height: '40px',
+                    background: 'linear-gradient(transparent, rgba(0,0,0,0.7))',
+                    pointerEvents: 'none',
+                    zIndex: 10
+                  }}>
+                    <Box sx={{
+                      position: 'absolute',
+                      bottom: '8px',
+                      left: '12px',
+                      right: '12px',
+                      height: '4px',
+                      backgroundColor: 'rgba(255,255,255,0.2)',
+                      borderRadius: '2px',
+                      overflow: 'hidden'
+                    }}>
+                      {getAllWatchedForCalc().map((segment, index) => {
+                        const startPercent = duration > 0 ? (segment.start / duration) * 100 : 0;
+                        const endPercent = duration > 0 ? (segment.end / duration) * 100 : 0;
+                        const width = Math.max(0, endPercent - startPercent);
+                        return (
+                          <Box
+                            key={`mini-${index}`}
+                            sx={{
+                              position: 'absolute',
+                              left: `${startPercent}%`,
+                              width: `${width}%`,
+                              height: '100%',
+                              backgroundColor: '#fff',
+                              borderRadius: '2px'
+                            }}
+                          />
+                        );
+                      })}
+                    </Box>
                   </Box>
                 </Box>
               </Box>
-              <Typography variant="body2" color="textSecondary">
-                {t('videoPlayer.currentTime')}: {formatTime(currentTime)} | 
-                {t('videoPlayer.duration')}: {formatTime(duration)} | 
-                {t('videoPlayer.watched')}: {formatTime(getAllWatchedForCalc().reduce((sum, s) => sum + (s.end - s.start), 0))} | 
-                {t('videoPlayer.progress')}: {typeof currentProgress === 'number' ? currentProgress.toFixed(1) : '0.0'}%
-              </Typography>
-              {isWatching && (
-                <Typography variant="body2" color="primary" sx={{ mt: 1 }}>
-                  {t('videoPlayer.currentlyWatching')}
-                </Typography>
-              )}
-              {isCompleted && (
-                <Typography variant="body2" color="success.main" sx={{ mt: 1, fontWeight: 'bold' }}>
-                  {t('videoPlayer.congrats')}
-                </Typography>
-              )}
-            </Box>
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-                {t('videoPlayer.timelineLabel', { duration: formatTime(duration) })}
-              </Typography>
-              <Box sx={{ width: '100%', height: 24, backgroundColor: '#e0e0e0', borderRadius: 2, position: 'relative', overflow: 'hidden', border: '1px solid #ddd' }}>
-                {watchedSegments.map((segment, index) => {
-                  const startPercent = (segment.start / duration) * 100;
-                  const endPercent = (segment.end / duration) * 100;
-                  const width = endPercent - startPercent;
-                  return (
-                    <Box key={`watched-${index}`} sx={{ position: 'absolute', left: `${startPercent}%`, width: `${width}%`, height: '100%', backgroundColor: '#4caf50', borderRadius: 1, zIndex: 2 }} />
-                  );
-                })}
-                {currentWatchSegment && currentWatchSegment.end > currentWatchSegment.start && (() => {
-                  const startPercent = (currentWatchSegment.start / duration) * 100;
-                  const endPercent = (currentWatchSegment.end / duration) * 100;
-                  const width = endPercent - startPercent;
-                  return (
-                    <Box key={`current-active`} sx={{ position: 'absolute', left: `${startPercent}%`, width: `${width}%`, height: '100%', backgroundColor: '#66bb6a', borderRadius: 1, border: '2px solid #4caf50', zIndex: 3 }} />
-                  );
-                })()}
-              </Box>
-            </Box>
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mb: 1 }}>
-                {t('videoPlayer.maxWatched')}: {formatTime(maxWatchedTime)} | 
-                {t('videoPlayer.progress')}: {typeof currentProgress === 'number' ? currentProgress.toFixed(1) : '0.0'}% | 
-                {t('videoPlayer.duration')}: {formatTime(duration)}
-              </Typography>
-            </Box>
-          </Paper>
-        
 
-          {/* Quiz UI removed from Video page. Use dedicated Quiz page. */}
+              {/* Next content button (always enabled after video completion) */}
+              {courseCompleted ? (
+                <Box sx={{ mb: 3, textAlign: 'center' }}>
+                  <Alert severity="success" sx={{ mb: 2 }}>
+                    <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1 }}>
+                      {completionMessage || 'Tebrikler! Kursu tamamladınız.'}
+                    </Typography>
+                    <Typography variant="body2">
+                      5 saniye sonra My Learnings sayfasına yönlendirileceksiniz...
+                    </Typography>
+                  </Alert>
+                </Box>
+              ) : isCompleted && (nextVideo || quizInfo.hasQuiz || (canCompleteCourse && !nextVideo && !quizInfo.hasQuiz)) && (
+                <Box sx={{ mb: 3, textAlign: 'center' }}>
+                  {(() => {
+                    // Show "Complete Course" button if this is the last content, no quiz, and all content is completed
+                    if (canCompleteCourse && !nextVideo && !quizInfo.hasQuiz) {
+                      return (
+                        <Button
+                          variant="contained"
+                          color="success"
+                          size="large"
+                          onClick={handleCompleteCourse}
+                          disabled={completingCourse}
+                          sx={{
+                            px: 4,
+                            py: 1.5,
+                            fontSize: '1.1rem',
+                            fontWeight: 'bold'
+                          }}
+                        >
+                          {completingCourse ? 'Tamamlanıyor...' : 'Kursu Tamamla'}
+                        </Button>
+                      );
+                    }
 
-          {/* Notes Section */}
-          <Paper sx={{ p: 2 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-              <Typography variant="h6" gutterBottom sx={{ mb: 0 }}>{t('videoPlayer.notes')}</Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <Typography variant="caption" color="textSecondary">
-                  {lastNotesSavedAt ? t('videoPlayer.lastSaved', { value: new Date(lastNotesSavedAt).toLocaleString() }) : t('videoPlayer.notSavedYet')}
-                </Typography>
-                <Button size="small" variant="outlined" onClick={() => setIsEditingNotes(v => !v)}>
-                  {isEditingNotes ? t('videoPlayer.view') : t('videoPlayer.edit')}
-                </Button>
-                <Chip 
-                  label={autoSaveNotes ? t('videoPlayer.autoSaveOn') : t('videoPlayer.autoSaveOff')}
-                  color={autoSaveNotes ? 'success' : 'default'}
-                  onClick={() => setAutoSaveNotes(v => !v)}
-                  variant={autoSaveNotes ? 'filled' : 'outlined'}
-                  sx={{ cursor: 'pointer' }}
-                />
-              </Box>
+                    // Show quiz or next video button (video is completed, so button is always enabled)
+                    return (
+                      <Button
+                        variant="contained"
+                        size="large"
+                        startIcon={<NextIcon />}
+                        onClick={() => {
+                          if (quizInfo.hasQuiz) {
+                            navigate(`/quiz/${quizInfo.quizId}?videoId=${videoId}`);
+                          } else if (nextVideo?.id) {
+                            const route = getContentRoute(nextVideo);
+                            if (route) navigate(route);
+                          } else if (videoData?.courseId) {
+                            navigate(`/course/${videoData.courseId}${adminPreview ? '?adminPreview=1' : ''}`);
+                          }
+                        }}
+                        sx={{
+                          px: 4,
+                          py: 1.5,
+                          fontSize: '1.1rem',
+                          fontWeight: 'bold',
+                          bgcolor: 'success.main',
+                          '&:hover': { bgcolor: 'success.dark' }
+                        }}
+                      >
+                        {t('videoPlayer.goToNext')}
+                      </Button>
+                    );
+                  })()}
+                  {!canCompleteCourse && (
+                    <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+                      {t('videoPlayer.nextValue', { value: (quizInfo.hasQuiz ? `${t('courseDetail.quizTitle', { title: quizInfo.quizTitle || 'Chapter quiz' })}` : (nextVideo ? nextVideo.title : '—')) })}
+                    </Typography>
+                  )}
+                </Box>
+              )}
+
+              {/* Auto proceed when video fully completed */}
+              {isCompleted && (quizInfo.hasQuiz || nextVideo) && (
+                <Box sx={{ display: 'none' }}>
+                  {/* noop marker; effect handled below */}
+                </Box>
+              )}
+
+              {/* Remove course completion banner below top button */}
+              {/* Keep a minimal next label already shown above */}
+
+              {/* If still want to show coming next video name when quiz not present */}
+              {!quizInfo.hasQuiz && nextVideo && (
+                <Box sx={{ mb: 2, textAlign: 'center' }}>
+                  <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+                    Next: {nextVideo.title}
+                  </Typography>
+                </Box>
+              )}
+
+              {/* Progress Information */}
+              <Paper sx={{ p: 2, mb: 3 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                  <Typography variant="h6">{t('videoPlayer.progressTitle')}</Typography>
+                  {isCompleted && (
+                    <Chip label={t('videoPlayer.completedBadge')} color="success" variant="filled" sx={{ fontWeight: 'bold' }} />
+                  )}
+                </Box>
+                <Box sx={{ mb: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                    <Typography variant="body2" color="textSecondary"><strong>{t('videoPlayer.progressSummary')}</strong></Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Typography variant="body2" color="textSecondary">{t('videoPlayer.videoWatched')}</Typography>
+                      <Box sx={{ width: 20, height: 20, border: '2px solid #ccc', borderRadius: '3px', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: isCompleted ? '#4caf50' : 'transparent', color: isCompleted ? 'white' : 'transparent' }}>
+                        {isCompleted && '✓'}
+                      </Box>
+                    </Box>
+                  </Box>
+                  <Typography variant="body2" color="textSecondary">
+                    {t('videoPlayer.currentTime')}: {formatTime(currentTime)} |
+                    {t('videoPlayer.duration')}: {formatTime(duration)} |
+                    {t('videoPlayer.watched')}: {formatTime(getAllWatchedForCalc().reduce((sum, s) => sum + (s.end - s.start), 0))} |
+                    {t('videoPlayer.progress')}: {typeof currentProgress === 'number' ? currentProgress.toFixed(1) : '0.0'}%
+                  </Typography>
+                  {isWatching && (
+                    <Typography variant="body2" color="primary" sx={{ mt: 1 }}>
+                      {t('videoPlayer.currentlyWatching')}
+                    </Typography>
+                  )}
+                  {isCompleted && (
+                    <Typography variant="body2" color="success.main" sx={{ mt: 1, fontWeight: 'bold' }}>
+                      {t('videoPlayer.congrats')}
+                    </Typography>
+                  )}
+                </Box>
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
+                    {t('videoPlayer.timelineLabel', { duration: formatTime(duration) })}
+                  </Typography>
+                  <Box sx={{ width: '100%', height: 24, backgroundColor: '#e0e0e0', borderRadius: 2, position: 'relative', overflow: 'hidden', border: '1px solid #ddd' }}>
+                    {watchedSegments.map((segment, index) => {
+                      const startPercent = (segment.start / duration) * 100;
+                      const endPercent = (segment.end / duration) * 100;
+                      const width = endPercent - startPercent;
+                      return (
+                        <Box key={`watched-${index}`} sx={{ position: 'absolute', left: `${startPercent}%`, width: `${width}%`, height: '100%', backgroundColor: '#4caf50', borderRadius: 1, zIndex: 2 }} />
+                      );
+                    })}
+                    {currentWatchSegment && currentWatchSegment.end > currentWatchSegment.start && (() => {
+                      const startPercent = (currentWatchSegment.start / duration) * 100;
+                      const endPercent = (currentWatchSegment.end / duration) * 100;
+                      const width = endPercent - startPercent;
+                      return (
+                        <Box key={`current-active`} sx={{ position: 'absolute', left: `${startPercent}%`, width: `${width}%`, height: '100%', backgroundColor: '#66bb6a', borderRadius: 1, border: '2px solid #4caf50', zIndex: 3 }} />
+                      );
+                    })()}
+                  </Box>
+                </Box>
+                <Box sx={{ mt: 2 }}>
+                  <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mb: 1 }}>
+                    {t('videoPlayer.maxWatched')}: {formatTime(maxWatchedTime)} |
+                    {t('videoPlayer.progress')}: {typeof currentProgress === 'number' ? currentProgress.toFixed(1) : '0.0'}% |
+                    {t('videoPlayer.duration')}: {formatTime(duration)}
+                  </Typography>
+                </Box>
+              </Paper>
+
+
+              {/* Quiz UI removed from Video page. Use dedicated Quiz page. */}
+
+              {/* Notes Section */}
+              <Paper sx={{ p: 2 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                  <Typography variant="h6" gutterBottom sx={{ mb: 0 }}>{t('videoPlayer.notes')}</Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Typography variant="caption" color="textSecondary">
+                      {lastNotesSavedAt ? t('videoPlayer.lastSaved', { value: new Date(lastNotesSavedAt).toLocaleString() }) : t('videoPlayer.notSavedYet')}
+                    </Typography>
+                    <Button size="small" variant="outlined" onClick={() => setIsEditingNotes(v => !v)}>
+                      {isEditingNotes ? t('videoPlayer.view') : t('videoPlayer.edit')}
+                    </Button>
+                    <Chip
+                      label={autoSaveNotes ? t('videoPlayer.autoSaveOn') : t('videoPlayer.autoSaveOff')}
+                      color={autoSaveNotes ? 'success' : 'default'}
+                      onClick={() => setAutoSaveNotes(v => !v)}
+                      variant={autoSaveNotes ? 'filled' : 'outlined'}
+                      sx={{ cursor: 'pointer' }}
+                    />
+                  </Box>
+                </Box>
+                {isEditingNotes ? (
+                  <>
+                    <TextField fullWidth multiline rows={4} variant="outlined" placeholder={t('videoPlayer.addNotesPlaceholder')} value={notes} onChange={(e) => setNotes(e.target.value)} sx={{ mb: 2 }} />
+                    <Button variant="contained" onClick={saveNotes} disabled={savingNotes}>
+                      {savingNotes ? t('videoPlayer.saving') : t('videoPlayer.saveNotes')}
+                    </Button>
+                  </>
+                ) : (
+                  <Box sx={{ p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+                    <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                      {notes || ''}
+                    </Typography>
+                  </Box>
+                )}
+              </Paper>
+              <Snackbar open={notesSavedOpen} autoHideDuration={2000} onClose={() => setNotesSavedOpen(false)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+                <MuiAlert elevation={6} variant="filled" severity="success" sx={{ width: '100%' }}>
+                  {t('videoPlayer.notesSaved')}
+                </MuiAlert>
+              </Snackbar>
             </Box>
-            {isEditingNotes ? (
-              <>
-                <TextField fullWidth multiline rows={4} variant="outlined" placeholder={t('videoPlayer.addNotesPlaceholder')} value={notes} onChange={(e) => setNotes(e.target.value)} sx={{ mb: 2 }} />
-                <Button variant="contained" onClick={saveNotes} disabled={savingNotes}>
-                  {savingNotes ? t('videoPlayer.saving') : t('videoPlayer.saveNotes')}
-                </Button>
-              </>
-            ) : (
-              <Box sx={{ p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
-                <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-                  {notes || ''}
-                </Typography>
-              </Box>
-            )}
-          </Paper>
-          <Snackbar open={notesSavedOpen} autoHideDuration={2000} onClose={() => setNotesSavedOpen(false)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
-            <MuiAlert elevation={6} variant="filled" severity="success" sx={{ width: '100%' }}>
-              {t('videoPlayer.notesSaved')}
-            </MuiAlert>
-          </Snackbar>
-        </Box>
-        </Box>
+          </Box>
         </Container>
       </Box>
     </Box>

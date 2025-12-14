@@ -35,7 +35,7 @@ const CourseDetail = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const adminPreviewFlag = new URLSearchParams(location.search).get('adminPreview') === '1';
-  
+
   const [course, setCourse] = useState(null);
   const [userProgress, setUserProgress] = useState({});
   const [lastWatchedVideoId, setLastWatchedVideoId] = useState(null);
@@ -137,27 +137,27 @@ const CourseDetail = () => {
     try {
       setLoading(true);
       setError(null);
-      
+
       // Ensure we have authentication headers
       const token = localStorage.getItem('token');
       if (token) {
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       }
-      
+
       // Admin preview ONLY when adminPreview flag is explicitly provided
       const useAdminPreview = adminPreviewFlag === true;
       const apiUrl = useAdminPreview ? `/api/courses/${courseId}?adminPreview=1` : `/api/courses/${courseId}`;
-      
+
       const [courseResponse, progressResponse] = await Promise.all([
         axios.get(apiUrl).catch(err => {
           console.error('Error fetching course:', err);
           throw err;
         }),
-        user?.role === 'student' 
+        user?.role === 'student'
           ? axios.get(`/api/progress/course/${courseId}`).catch(err => {
-              console.warn('Error fetching progress (non-critical):', err);
-              return { data: { data: [] } };
-            })
+            console.warn('Error fetching progress (non-critical):', err);
+            return { data: { data: [] } };
+          })
           : Promise.resolve({ data: { data: [] } })
       ]);
 
@@ -183,8 +183,8 @@ const CourseDetail = () => {
             chapter.sections.forEach((section, sectionIdx) => {
               if (section.videos && Array.isArray(section.videos)) {
                 section.videos.forEach((video, videoIdx) => {
-                  allVideos.push({ 
-                    ...video, 
+                  allVideos.push({
+                    ...video,
                     _originalIndex: globalIndex++,
                     _chapterIndex: chapterIdx,
                     _sectionIndex: sectionIdx,
@@ -204,7 +204,7 @@ const CourseDetail = () => {
       // sort by order if available, but preserve original index
       allVideos.sort((a, b) => (a.order || 0) - (b.order || 0));
       setFlatVideos(allVideos);
-      
+
       const courseProgressList = progressResponse?.data?.progress || progressResponse?.data?.data || [];
       if (Array.isArray(courseProgressList)) {
         const progressMap = {};
@@ -261,10 +261,10 @@ const CourseDetail = () => {
             });
           const results = await Promise.allSettled(quizPromises);
           const map = {};
-          results.forEach(r => { 
-            if (r.status === 'fulfilled' && r.value) { 
-              map[r.value.videoId] = r.value.info; 
-            } 
+          results.forEach(r => {
+            if (r.status === 'fulfilled' && r.value) {
+              map[r.value.videoId] = r.value.info;
+            }
           });
           setVideoQuizInfo(map);
         }
@@ -322,24 +322,24 @@ const CourseDetail = () => {
     // Always allow resuming the last watched video
     if (lastWatchedVideoId && String(videoId) === String(lastWatchedVideoId)) return true;
     if (!flatVideos.length) return false;
-    
+
     // Resolve all video IDs to ensure we're using real IDs for comparison
     const resolvedVideos = flatVideos.map((v, idx) => {
       const resolvedId = resolveVideoId(v) || v.id;
       return { ...v, resolvedId, _flatIndex: idx };
     }).filter(v => v.resolvedId); // Only keep videos with valid resolved IDs
-    
+
     if (resolvedVideos.length === 0) return false;
-    
+
     // Find the index of the requested video in flatVideos array
     // CRITICAL: Use position (index) in the array, not just video ID
     // This ensures that even if the same video appears multiple times,
     // each occurrence is checked based on its position in the sequence
     let index = -1;
-    
+
     // PRIORITY 1: Match by position (chapter/section/video index) - MOST RELIABLE for duplicate videos
     if (videoObj && typeof videoObj._chapterIndex === 'number' && typeof videoObj._sectionIndex === 'number' && typeof videoObj._videoIndex === 'number') {
-      index = resolvedVideos.findIndex(v => 
+      index = resolvedVideos.findIndex(v =>
         typeof v._chapterIndex === 'number' &&
         typeof v._sectionIndex === 'number' &&
         typeof v._videoIndex === 'number' &&
@@ -348,12 +348,12 @@ const CourseDetail = () => {
         v._videoIndex === videoObj._videoIndex
       );
     }
-    
+
     // PRIORITY 2: Match by original index (handles duplicate titles)
     if (index === -1 && videoObj && typeof videoObj._originalIndex === 'number') {
       index = resolvedVideos.findIndex(v => v._originalIndex === videoObj._originalIndex);
     }
-    
+
     // PRIORITY 3: If position info not available, we CANNOT reliably find the correct video
     // when duplicates exist. In this case, we must fail to prevent wrong video access.
     // Only allow ID-based matching if we're certain there are no duplicates
@@ -368,17 +368,17 @@ const CourseDetail = () => {
       // Only one video with this ID exists, safe to match by ID
       index = resolvedVideos.findIndex(v => String(v.resolvedId) === String(videoId));
     }
-    
+
     if (index === -1) return false; // Video not found in course
-    
+
     // First video (index 0) is always unlocked for enrolled users
     if (index === 0) return true;
-    
+
     // CRITICAL: Check completion based on POSITION in sequence, not video ID
     // Even if the same video appears at position 0 and position 3,
     // we need to check if videos at positions 0, 1, AND 2 are completed before unlocking position 3
     // Each position must be completed independently, regardless of video ID
-    
+
     // Check ALL videos before the requested position
     // We need to verify that every single video from index 0 to index-1 is completed
     // IMPORTANT: Even if the same video ID appears at multiple positions,
@@ -389,21 +389,21 @@ const CourseDetail = () => {
         // If video at position i is invalid, consider it incomplete
         return false;
       }
-      
+
       // Check progress for this specific video at this specific position
       // NOTE: If the same video ID appears at multiple positions, we check progress
       // for that video ID. But we still require ALL previous positions to be completed
       // in sequence, regardless of video ID.
       const p = userProgress[String(v.resolvedId)];
       const completed = !!(p?.isCompleted || (p?.watchPercentage >= 90));
-      
+
       if (!completed) {
         // If ANY video before the requested position is not completed, lock it
         // This ensures strict sequential progression, even for duplicate videos
         return false;
       }
     }
-    
+
     // All previous videos (by position) are completed, unlock this video
     // This ensures that even if the same video appears at position 0 and position 3,
     // position 3 is only unlocked after positions 0, 1, and 2 are all completed
@@ -418,11 +418,11 @@ const CourseDetail = () => {
       if (token) {
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       }
-      
+
       await axios.post(`/api/courses/${courseId}/enroll`);
       setIsEnrolled(true);
       setCourse(prev => ({ ...prev, studentCount: prev.studentCount + 1 }));
-      
+
       // Refresh course data to get updated enrollment status
       await fetchCourseData();
     } catch (error) {
@@ -497,7 +497,7 @@ const CourseDetail = () => {
                   {t('courses.instructor')}: {course.teacher.firstName} {course.teacher.lastName}
                 </Typography>
               )}
-              
+
               <Box display="flex" gap={2} flexWrap="wrap" sx={{ mb: 2 }}>
                 {course.category && (
                   <Chip label={course.category} color="primary" variant="outlined" />
@@ -512,7 +512,7 @@ const CourseDetail = () => {
                   <Chip label={t('courseDetail.completed')} color="success" variant="filled" sx={{ fontWeight: 'bold' }} />
                 )}
               </Box>
-              
+
               <Box display="flex" gap={3} sx={{ mb: 2 }}>
                 {(() => {
                   // Build a flattened list of content
@@ -532,9 +532,9 @@ const CourseDetail = () => {
                       <Typography variant="body2" color="textSecondary">
                         {t('courseDetail.filesCount', { count: filesCount })}
                       </Typography>
-                    <Typography variant="body2" color="textSecondary">
+                      <Typography variant="body2" color="textSecondary">
                         {t('courseDetail.videosCount', { count: videosCount })}
-                    </Typography>
+                      </Typography>
                     </Box>
                   );
                 })()}
@@ -548,7 +548,7 @@ const CourseDetail = () => {
                 )}
               </Box>
             </Box>
-            
+
             {/* Enroll button is shown if not enrolled and user is not the owner (teachers/admins can enroll in others' courses) */}
             {!isEnrolled && !isOwner && (
               <Button
@@ -581,11 +581,11 @@ const CourseDetail = () => {
                       <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
                         {t('courseDetail.chapter', { index: chapterIndex + 1, title: chapter.title })}
                       </Typography>
-                      <Chip 
-                        label={t('courseDetail.sectionsCount', { count: chapter.sections?.length || 0 })} 
-                        size="small" 
-                        color="primary" 
-                        variant="outlined" 
+                      <Chip
+                        label={t('courseDetail.sectionsCount', { count: chapter.sections?.length || 0 })}
+                        size="small"
+                        color="primary"
+                        variant="outlined"
                       />
                     </Box>
                   </AccordionSummary>
@@ -595,7 +595,7 @@ const CourseDetail = () => {
                         {chapter.description}
                       </Typography>
                     )}
-                    
+
                     {chapter.sections && chapter.sections.length > 0 ? (
                       <Box>
                         {chapter.sections.map((section, sectionIndex) => (
@@ -610,18 +610,18 @@ const CourseDetail = () => {
                                   const videosCount = (section.videos || []).length - filesCount;
                                   return (
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                      <Chip 
-                                        label={t('courseDetail.filesCount', { count: filesCount })} 
-                                        size="small" 
-                                        color="info" 
-                                        variant="outlined" 
+                                      <Chip
+                                        label={t('courseDetail.filesCount', { count: filesCount })}
+                                        size="small"
+                                        color="info"
+                                        variant="outlined"
                                       />
-                                <Chip 
-                                        label={t('courseDetail.videosCount', { count: videosCount })} 
-                                  size="small" 
-                                  color="secondary" 
-                                  variant="outlined" 
-                                />
+                                      <Chip
+                                        label={t('courseDetail.videosCount', { count: videosCount })}
+                                        size="small"
+                                        color="secondary"
+                                        variant="outlined"
+                                      />
                                     </Box>
                                   );
                                 })()}
@@ -633,7 +633,7 @@ const CourseDetail = () => {
                                   {section.description}
                                 </Typography>
                               )}
-                              
+
                               {section.videos && section.videos.length > 0 ? (
                                 <List sx={{ p: 0 }}>
                                   {section.videos.map((video, videoIndex) => {
@@ -644,13 +644,13 @@ const CourseDetail = () => {
                                     const progress = userProgress[progressId] || userProgress[String(progressId)];
                                     // Check completion: either isCompleted flag OR watchPercentage >= 90
                                     const isCompleted = progress?.isCompleted || (progress?.watchPercentage >= 90);
-                                  const isWatched = progress?.watchPercentage > 0;
-                                  const quizInfo = videoQuizInfo[resolvedVideoId || video.id || video.videoId] || { hasQuiz: false };
+                                    const isWatched = progress?.watchPercentage > 0;
+                                    const quizInfo = videoQuizInfo[resolvedVideoId || video.id || video.videoId] || { hasQuiz: false };
 
                                     return (
                                       <React.Fragment key={`${chapterIndex}-${sectionIndex}-${videoIndex}-${resolvedVideoId || video.id || 'noid'}`}>
-                                        <ListItem 
-                                          sx={{ 
+                                        <ListItem
+                                          sx={{
                                             px: 0,
                                             '&:hover': {
                                               bgcolor: 'action.hover',
@@ -674,7 +674,7 @@ const CourseDetail = () => {
                                               <PlayIcon color="disabled" />
                                             )}
                                           </ListItemIcon>
-                                          
+
                                           <Box sx={{ flex: 1, minWidth: 0 }}>
                                             <Box display="flex" alignItems="center" gap={2} sx={{ mb: 1 }}>
                                               <Typography variant="body1" sx={{ fontWeight: isWatched ? 600 : 400 }}>
@@ -682,25 +682,25 @@ const CourseDetail = () => {
                                               </Typography>
                                               {/* Duration chip removed per request */}
                                               {isCompleted && (
-                                                <Chip 
-                                                  label={t('courseDetail.completed')} 
-                                                  size="small" 
+                                                <Chip
+                                                  label={t('courseDetail.completed')}
+                                                  size="small"
                                                   color="success"
                                                 />
                                               )}
                                             </Box>
-                                            
+
                                             {video.description && (
                                               <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
                                                 {video.description}
                                               </Typography>
                                             )}
-                                            
+
                                             {isWatched && !isCompleted && (
                                               <Box sx={{ width: '100%', maxWidth: 200 }}>
-                                                <LinearProgress 
-                                                  variant="determinate" 
-                                                  value={Number(progress?.watchPercentage) || 0} 
+                                                <LinearProgress
+                                                  variant="determinate"
+                                                  value={Number(progress?.watchPercentage) || 0}
                                                   sx={{ height: 4, borderRadius: 2 }}
                                                 />
                                                 <Typography variant="caption" color="textSecondary">
@@ -709,15 +709,15 @@ const CourseDetail = () => {
                                               </Box>
                                             )}
                                           </Box>
-                                          
+
                                           {(() => {
                                             const isFile = (video?.type === 'file') || /(\.pdf|\.pptx?|\/uploads\/files\/)/i.test(String(video?.fileUrl || ''));
                                             const base = isFile ? '/file/' : '/video/';
                                             const suffix = adminPreviewFlag ? '?adminPreview=1' : '';
-                                            
+
                                             // Try to get video ID from multiple sources
                                             let videoIdToUse = resolvedVideoId;
-                                            
+
                                             // If resolvedVideoId is not available, try to find it in course.videos
                                             if (!videoIdToUse && Array.isArray(course.videos) && course.videos.length > 0) {
                                               // Try to match by title
@@ -734,14 +734,14 @@ const CourseDetail = () => {
                                                 }
                                               }
                                             }
-                                            
+
                                             // If still no ID, try to get from flatVideos by position
                                             if (!videoIdToUse && flatVideos.length > 0) {
                                               const videoInFlat = flatVideos.find((v, idx) => {
                                                 if (typeof v._chapterIndex === 'number' && typeof v._sectionIndex === 'number' && typeof v._videoIndex === 'number') {
-                                                  if (v._chapterIndex === chapterIndex && 
-                                                      v._sectionIndex === sectionIndex && 
-                                                      v._videoIndex === videoIndex) {
+                                                  if (v._chapterIndex === chapterIndex &&
+                                                    v._sectionIndex === sectionIndex &&
+                                                    v._videoIndex === videoIndex) {
                                                     return true;
                                                   }
                                                 }
@@ -751,14 +751,14 @@ const CourseDetail = () => {
                                                 videoIdToUse = videoInFlat.id;
                                               }
                                             }
-                                            
+
                                             // Final fallback: use video.id if available
                                             if (!videoIdToUse && video.id) {
                                               videoIdToUse = video.id;
                                             }
-                                            
+
                                             const targetHref = videoIdToUse ? `${base}${videoIdToUse}${suffix}` : '#';
-                                            
+
                                             // Check if this is the first video in the course
                                             const firstVideo = flatVideos.length > 0 ? flatVideos[0] : null;
                                             const isFirstVideo = firstVideo && (
@@ -766,43 +766,43 @@ const CourseDetail = () => {
                                               (!videoIdToUse && firstVideo.title === video.title) ||
                                               (videoIndex === 0 && sectionIndex === 0 && chapterIndex === 0)
                                             );
-                                            
+
                                             // Lock all items when not enrolled (unless teacher/admin)
                                             const baseLocked = !isTeacher && !isEnrolled;
                                             // If video is completed, always allow access (user can re-enter completed stages)
                                             const videoCompleted = isCompleted || (progress?.watchPercentage >= 90);
-                                            
+
                                             // Find video in flatVideos by matching position
                                             const videoInFlat = flatVideos.find((v, idx) => {
                                               if (typeof v._chapterIndex === 'number' && typeof v._sectionIndex === 'number' && typeof v._videoIndex === 'number') {
-                                                if (v._chapterIndex === chapterIndex && 
-                                                    v._sectionIndex === sectionIndex && 
-                                                    v._videoIndex === videoIndex) {
+                                                if (v._chapterIndex === chapterIndex &&
+                                                  v._sectionIndex === sectionIndex &&
+                                                  v._videoIndex === videoIndex) {
                                                   return true;
                                                 }
                                               }
                                               return false;
                                             });
-                                            
+
                                             // Use the found video from flatVideos (has position info) or create one with position info
-                                            const videoForUnlock = videoInFlat || { 
-                                              ...video, 
+                                            const videoForUnlock = videoInFlat || {
+                                              ...video,
                                               _chapterIndex: chapterIndex,
                                               _sectionIndex: sectionIndex,
                                               _videoIndex: videoIndex,
                                               id: videoIdToUse
                                             };
-                                            
+
                                             const sequentialLocked = !isTeacher && isEnrolled && !isFirstVideo && !videoCompleted && !isVideoUnlocked(videoIdToUse, videoForUnlock);
-                                            
+
                                             // For teachers/owners, always allow access even if ID is not resolved
                                             // For enrolled students, allow if it's the first video or if ID is resolved
                                             const isLocked = isTeacher ? false : (
-                                              (!videoIdToUse && !isFirstVideo) || 
-                                              baseLocked || 
+                                              (!videoIdToUse && !isFirstVideo) ||
+                                              baseLocked ||
                                               sequentialLocked
                                             );
-                                            
+
                                             // Debug logging
                                             if (!videoIdToUse && !isTeacher) {
                                               console.warn('Video ID not resolved:', {
@@ -815,18 +815,23 @@ const CourseDetail = () => {
                                                 courseVideosCount: course.videos?.length || 0
                                               });
                                             }
-                                            
-                                            // Force enable button for teachers/owners even if ID not found
-                                            const shouldEnableButton = isTeacher || videoIdToUse || isFirstVideo;
-                                            const finalIsLocked = isTeacher ? false : (isLocked && !shouldEnableButton);
-                                            
+
+                                            // Final decision on locking:
+                                            // 1. Teachers/owners: never locked
+                                            // 2. Not enrolled: always locked (must enroll first)
+                                            // 3. Enrolled but not first video and not completed previous: locked
+                                            const finalIsLocked = isTeacher ? false : (
+                                              baseLocked || // Not enrolled - always lock
+                                              sequentialLocked // Enrolled but hasn't completed previous
+                                            );
+
                                             const handleVideoClick = (e) => {
                                               // Prevent any default behavior
                                               if (e) {
                                                 e.preventDefault();
                                                 e.stopPropagation();
                                               }
-                                              
+
                                               // Force console log even if disabled
                                               console.log('=== START BUTTON CLICKED ===');
                                               console.log('Video object:', video);
@@ -839,8 +844,8 @@ const CourseDetail = () => {
                                               console.log('Is Enrolled:', isEnrolled);
                                               console.log('Base Locked:', baseLocked);
                                               console.log('Sequential Locked:', sequentialLocked);
-                                              console.log('Should Enable Button:', shouldEnableButton);
-                                              
+                                              console.log('Is First Video:', isFirstVideo);
+
                                               if (finalIsLocked) {
                                                 console.warn('❌ Button is LOCKED');
                                                 if (baseLocked) {
@@ -852,30 +857,30 @@ const CourseDetail = () => {
                                                 }
                                                 return;
                                               }
-                                              
+
                                               // Start with videoIdToUse (already resolved above)
                                               let finalVideoId = videoIdToUse;
-                                              
+
                                               console.log('🔍 Starting ID search. Initial ID:', finalVideoId);
-                                              
+
                                               // If still no ID, try aggressive search (videoIdToUse should already have it, but double-check)
                                               if (!finalVideoId) {
                                                 console.warn('⚠️ videoIdToUse is empty, trying aggressive search...');
                                                 console.log('Video object keys:', Object.keys(video));
                                                 console.log('Video object:', video);
-                                                
+
                                                 // Priority 1: video.id
                                                 if (video.id) {
                                                   finalVideoId = String(video.id);
                                                   console.log('✅ Found ID in video.id:', finalVideoId);
                                                 }
-                                                
+
                                                 // Priority 2: video.videoId
                                                 if (!finalVideoId && video.videoId) {
                                                   finalVideoId = String(video.videoId);
                                                   console.log('✅ Found ID in video.videoId:', finalVideoId);
                                                 }
-                                                
+
                                                 // Priority 3: course.videos by title
                                                 if (!finalVideoId && Array.isArray(course.videos) && course.videos.length > 0) {
                                                   const matchByTitle = course.videos.find(v => v.title === video.title);
@@ -883,7 +888,7 @@ const CourseDetail = () => {
                                                     finalVideoId = String(matchByTitle.id);
                                                     console.log('✅ Found ID in course.videos by title:', finalVideoId);
                                                   }
-                                                  
+
                                                   // Priority 4: course.videos by fileUrl
                                                   if (!finalVideoId && video.fileUrl) {
                                                     const matchByUrl = course.videos.find(v => v.fileUrl === video.fileUrl);
@@ -893,14 +898,14 @@ const CourseDetail = () => {
                                                     }
                                                   }
                                                 }
-                                                
+
                                                 // Priority 5: flatVideos by position
                                                 if (!finalVideoId && flatVideos.length > 0) {
                                                   const videoInFlat = flatVideos.find((v, idx) => {
                                                     if (typeof v._chapterIndex === 'number' && typeof v._sectionIndex === 'number' && typeof v._videoIndex === 'number') {
-                                                      if (v._chapterIndex === chapterIndex && 
-                                                          v._sectionIndex === sectionIndex && 
-                                                          v._videoIndex === videoIndex) {
+                                                      if (v._chapterIndex === chapterIndex &&
+                                                        v._sectionIndex === sectionIndex &&
+                                                        v._videoIndex === videoIndex) {
                                                         return true;
                                                       }
                                                     }
@@ -910,11 +915,11 @@ const CourseDetail = () => {
                                                     finalVideoId = String(videoInFlat.id);
                                                     console.log('✅ Found ID in flatVideos by position:', finalVideoId);
                                                   }
-                                                  
+
                                                   // Priority 6: flatVideos by title/url
                                                   if (!finalVideoId) {
-                                                    const matchInFlat = flatVideos.find(v => 
-                                                      (v.title === video.title) || 
+                                                    const matchInFlat = flatVideos.find(v =>
+                                                      (v.title === video.title) ||
                                                       (v.fileUrl && video.fileUrl && v.fileUrl === video.fileUrl)
                                                     );
                                                     if (matchInFlat && matchInFlat.id) {
@@ -924,7 +929,7 @@ const CourseDetail = () => {
                                                   }
                                                 }
                                               }
-                                              
+
                                               // Final check: if still no ID found, try one more time from all sources
                                               if (!finalVideoId) {
                                                 console.warn('⚠️ Video ID still not found after all attempts');
@@ -932,7 +937,7 @@ const CourseDetail = () => {
                                                 console.log('Video object:', video);
                                                 console.log('Course videos:', course.videos?.map(v => ({ id: v.id, title: v.title })));
                                                 console.log('Flat videos:', flatVideos.map(v => ({ id: v.id, title: v.title })));
-                                                
+
                                                 // Last resort: try to get from video object directly
                                                 if (video.id) {
                                                   finalVideoId = video.id;
@@ -942,7 +947,7 @@ const CourseDetail = () => {
                                                   console.log('✅ Using video.videoId as last resort:', finalVideoId);
                                                 }
                                               }
-                                              
+
                                               if (!finalVideoId) {
                                                 console.error('❌ All attempts to find video ID failed');
                                                 console.log('Video object:', JSON.stringify(video, null, 2));
@@ -951,21 +956,21 @@ const CourseDetail = () => {
                                                 alert('Video ID not found. The video may not be properly linked to the course. Please refresh the page or contact support.');
                                                 return;
                                               }
-                                              
+
                                               // Build final href - never use 'unknown'
                                               const finalHref = `${base}${finalVideoId}${suffix}`;
-                                              
+
                                               console.log('🚀 Final Video ID:', finalVideoId);
                                               console.log('🚀 Final Href:', finalHref);
-                                              
+
                                               if (!finalVideoId || finalVideoId === 'unknown') {
                                                 console.error('❌ Cannot navigate: invalid video ID');
                                                 alert('Cannot open video: Invalid video ID. Please refresh the page.');
                                                 return;
                                               }
-                                              
+
                                               console.log('🚀 Attempting navigation to:', finalHref);
-                                              
+
                                               try {
                                                 navigate(finalHref);
                                                 console.log('✅ Navigate() called successfully');
@@ -976,7 +981,7 @@ const CourseDetail = () => {
                                                 window.location.href = finalHref;
                                               }
                                             };
-                                            
+
                                             // Debug: Log button state for first video only (once per render)
                                             if (videoIndex === 0 && sectionIndex === 0 && chapterIndex === 0 && !loading) {
                                               console.log('=== FIRST VIDEO BUTTON STATE ===');
@@ -991,7 +996,7 @@ const CourseDetail = () => {
                                               console.log('Target Href:', targetHref);
                                               console.log('Course Videos:', course.videos?.map(v => ({ id: v.id, title: v.title })));
                                             }
-                                            
+
                                             return (
                                               <Button
                                                 variant="contained"
@@ -1039,7 +1044,7 @@ const CourseDetail = () => {
                                           {/* */}
                                           {/* */}
                                         </ListItem>
-                                        
+
                                         {quizInfo.hasQuiz && (
                                           <List sx={{ p: 0 }}>
                                             <ListItem sx={{ px: 0 }}>
@@ -1056,8 +1061,8 @@ const CourseDetail = () => {
                                                 </Box>
                                               </Box>
                                               {(() => {
-                                                const quizHref = resolvedVideoId && quizInfo?.quizId 
-                                                  ? `/quiz/${quizInfo.quizId}?videoId=${resolvedVideoId}${adminPreviewFlag ? '&adminPreview=1' : ''}` 
+                                                const quizHref = resolvedVideoId && quizInfo?.quizId
+                                                  ? `/quiz/${quizInfo.quizId}?videoId=${resolvedVideoId}${adminPreviewFlag ? '&adminPreview=1' : ''}`
                                                   : '#';
                                                 const baseLocked = !isTeacher && !isEnrolled;
                                                 // Find video in flatVideos by matching position (chapter/section/video index)
@@ -1066,9 +1071,9 @@ const CourseDetail = () => {
                                                 const videoInFlatForQuiz = flatVideos.find((v, idx) => {
                                                   // PRIORITY 1: Match by position (most reliable for duplicate videos)
                                                   if (typeof v._chapterIndex === 'number' && typeof v._sectionIndex === 'number' && typeof v._videoIndex === 'number') {
-                                                    if (v._chapterIndex === chapterIndex && 
-                                                        v._sectionIndex === sectionIndex && 
-                                                        v._videoIndex === videoIndex) {
+                                                    if (v._chapterIndex === chapterIndex &&
+                                                      v._sectionIndex === sectionIndex &&
+                                                      v._videoIndex === videoIndex) {
                                                       return true;
                                                     }
                                                   }
@@ -1077,8 +1082,8 @@ const CourseDetail = () => {
                                                   return false;
                                                 });
                                                 // Use the found video from flatVideos (has position info) or create one with position info
-                                                const videoForUnlockQuiz = videoInFlatForQuiz || { 
-                                                  ...video, 
+                                                const videoForUnlockQuiz = videoInFlatForQuiz || {
+                                                  ...video,
                                                   _chapterIndex: chapterIndex,
                                                   _sectionIndex: sectionIndex,
                                                   _videoIndex: videoIndex
@@ -1149,8 +1154,8 @@ const CourseDetail = () => {
 
                   return (
                     <React.Fragment key={video.id}>
-                      <ListItem 
-                        sx={{ 
+                      <ListItem
+                        sx={{
                           px: 0,
                           '&:hover': {
                             bgcolor: 'action.hover',
@@ -1167,7 +1172,7 @@ const CourseDetail = () => {
                             <PlayIcon color="disabled" />
                           )}
                         </ListItemIcon>
-                        
+
                         <Box sx={{ flex: 1, minWidth: 0 }}>
                           <Box display="flex" alignItems="center" gap={2} sx={{ mb: 1 }}>
                             <Typography variant="body1" sx={{ fontWeight: isWatched ? 600 : 400 }}>
@@ -1175,25 +1180,25 @@ const CourseDetail = () => {
                             </Typography>
                             {/* Duration chip removed per request */}
                             {isCompleted && (
-                              <Chip 
-                                label={t('courseDetail.completed')} 
-                                size="small" 
+                              <Chip
+                                label={t('courseDetail.completed')}
+                                size="small"
                                 color="success"
                               />
                             )}
                           </Box>
-                          
+
                           {video.description && (
                             <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
                               {video.description}
                             </Typography>
                           )}
-                          
+
                           {isWatched && !isCompleted && (
                             <Box sx={{ width: '100%', maxWidth: 200 }}>
-                              <LinearProgress 
-                                variant="determinate" 
-                                value={Number(progress?.watchPercentage) || 0} 
+                              <LinearProgress
+                                variant="determinate"
+                                value={Number(progress?.watchPercentage) || 0}
                                 sx={{ height: 4, borderRadius: 2 }}
                               />
                               <Typography variant="caption" color="textSecondary">
@@ -1202,7 +1207,7 @@ const CourseDetail = () => {
                             </Box>
                           )}
                         </Box>
-                        
+
                         {(() => {
                           const locked = (!isEnrolled && !isTeacher) ? true : false;
                           const href = `/video/${video.id}`;
@@ -1219,7 +1224,7 @@ const CourseDetail = () => {
                           );
                         })()}
                       </ListItem>
-                      
+
                       {index < course.videos.length - 1 && <Divider />}
                     </React.Fragment>
                   );

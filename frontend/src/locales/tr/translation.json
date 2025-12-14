@@ -60,7 +60,9 @@
     "free": "Ücretsiz",
     "viewCourse": "Kursu Görüntüle",
     "emptyTitle": "Kriterlerinize uyan kurs bulunamadı",
-    "emptySubtitle": "Arama veya filtreleri değiştirmeyi deneyin"
+    "emptySubtitle": "Arama veya filtreleri değiştirmeyi deneyin",
+    "durationHours": "s",
+    "durationMinutes": "d"
   },
   "dashboard": {
     "welcome": "Tekrar hoş geldin, {{name}}!",

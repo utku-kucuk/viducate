@@ -21,8 +21,7 @@ import {
 import {
   PlayCircle as PlayIcon,
   AccessTime as TimeIcon,
-  Group as GroupIcon,
-  Star as StarIcon
+  Group as GroupIcon
 } from '@mui/icons-material';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -107,20 +106,123 @@ const CourseList = () => {
   });
 
   const formatDuration = (seconds) => {
-    if (!seconds) return '0h';
+    if (!seconds || seconds === 0) {
+      return `0${t('courses.durationMinutes')}`;
+    }
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     
-    if (hours > 0) {
-      return `${hours}h ${minutes > 0 ? `${minutes}m` : ''}`;
+    // Eğer 1 saat veya daha fazla ise saat ve dakika göster
+    if (hours >= 1) {
+      if (minutes > 0) {
+        return `${hours}${t('courses.durationHours')} ${minutes}${t('courses.durationMinutes')}`;
+      }
+      return `${hours}${t('courses.durationHours')}`;
     }
-    return `${minutes}m`;
+    // Eğer 1 saat'ten az ise sadece dakika göster
+    return `${minutes}${t('courses.durationMinutes')}`;
   };
 
 
-  const getTotalDuration = (videos) => {
-    if (!videos || videos.length === 0) return 0;
-    return videos.reduce((total, video) => total + (video.duration || 0), 0);
+  const getTotalDuration = (course) => {
+    if (!course) return 0;
+    
+    let totalSeconds = 0;
+    const processedVideoIds = new Set();
+    
+    // Create a map of video durations from videos array for quick lookup
+    const videoDurationMap = new Map();
+    
+    // First, collect all durations from videos array (backend returns as 'videos')
+    if (course.videos && Array.isArray(course.videos) && course.videos.length > 0) {
+      course.videos.forEach((video) => {
+        if (!video) return;
+        
+        const videoId = video.id;
+        let duration = video.duration;
+        
+        // Handle different duration formats
+        // Duration might be null, undefined, string, or number
+        if (duration === null || duration === undefined || duration === 'null' || duration === '') {
+          return; // Skip videos without duration
+        }
+        
+        // Convert to number
+        const durationNum = typeof duration === 'string' 
+          ? parseFloat(duration) 
+          : Number(duration);
+        
+        if (!isNaN(durationNum) && durationNum > 0 && isFinite(durationNum)) {
+          if (videoId) {
+            videoDurationMap.set(videoId, durationNum);
+            processedVideoIds.add(videoId);
+          }
+          totalSeconds += Math.floor(durationNum); // Use floor to ensure integer seconds
+        }
+      });
+    }
+    
+    // Fallback: check Videos (capital V) for backwards compatibility
+    if (course.Videos && Array.isArray(course.Videos) && course.Videos.length > 0) {
+      course.Videos.forEach(video => {
+        if (!video || !video.id || processedVideoIds.has(video.id)) return;
+        
+        let duration = video.duration;
+        if (duration === null || duration === undefined || duration === 'null' || duration === '') {
+          return;
+        }
+        
+        const durationNum = typeof duration === 'string' 
+          ? parseFloat(duration) 
+          : Number(duration);
+        
+        if (!isNaN(durationNum) && durationNum > 0 && isFinite(durationNum)) {
+          videoDurationMap.set(video.id, durationNum);
+          totalSeconds += Math.floor(durationNum);
+          processedVideoIds.add(video.id);
+        }
+      });
+    }
+    
+    // Check chapters structure - videos in chapters might only have IDs, not full duration
+    if (course.chapters && Array.isArray(course.chapters)) {
+      course.chapters.forEach(chapter => {
+        if (chapter.sections && Array.isArray(chapter.sections)) {
+          chapter.sections.forEach(section => {
+            if (section.videos && Array.isArray(section.videos)) {
+              section.videos.forEach(video => {
+                if (!video) return;
+                
+                // If video has duration directly in chapters structure
+                let duration = video.duration;
+                if (duration !== null && duration !== undefined && duration !== 'null' && duration !== '') {
+                  const durationNum = typeof duration === 'string' 
+                    ? parseFloat(duration) 
+                    : Number(duration);
+                  
+                  if (!isNaN(durationNum) && durationNum > 0 && isFinite(durationNum)) {
+                    // Only add if we haven't processed this video ID already
+                    if (!video.id || !processedVideoIds.has(video.id)) {
+                      totalSeconds += Math.floor(durationNum);
+                      if (video.id) {
+                        processedVideoIds.add(video.id);
+                      }
+                    }
+                  }
+                }
+                // If video has ID but no duration in chapters, try to get from map
+                else if (video.id && videoDurationMap.has(video.id) && !processedVideoIds.has(video.id)) {
+                  totalSeconds += videoDurationMap.get(video.id);
+                  processedVideoIds.add(video.id);
+                }
+              });
+            }
+          });
+        }
+      });
+    }
+    
+    return totalSeconds;
   };
 
   // Show loading while authentication is being checked
@@ -298,7 +400,19 @@ const CourseList = () => {
                   <Box display="flex" alignItems="center" gap={0.5}>
                     <TimeIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
                     <Typography variant="body2" color="textSecondary">
-                      {formatDuration(getTotalDuration(course.Videos))}
+                      {(() => {
+                        const totalSeconds = getTotalDuration(course);
+                        // Debug: log first course to see what we're getting
+                        if (course.id === filteredCourses[0]?.id) {
+                          console.log('First course debug:', {
+                            title: course.title,
+                            videosCount: course.videos?.length || 0,
+                            videos: course.videos?.map(v => ({ id: v.id, duration: v.duration })) || [],
+                            totalSeconds
+                          });
+                        }
+                        return formatDuration(totalSeconds);
+                      })()}
                     </Typography>
                   </Box>
                   
@@ -306,13 +420,6 @@ const CourseList = () => {
                     <GroupIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
                     <Typography variant="body2" color="textSecondary">
                       {course.studentCount || 0}
-                    </Typography>
-                  </Box>
-                  
-                  <Box display="flex" alignItems="center" gap={0.5}>
-                    <StarIcon sx={{ fontSize: 16, color: 'warning.main' }} />
-                    <Typography variant="body2" color="textSecondary">
-                      {course.rating || 'N/A'}
                     </Typography>
                   </Box>
                 </Box>

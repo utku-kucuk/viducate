@@ -36,7 +36,8 @@ import {
   Paper,
   Divider,
   Pagination,
-  InputAdornment
+  InputAdornment,
+  DialogContentText
 } from '@mui/material';
 import {
   People as PeopleIcon,
@@ -70,7 +71,7 @@ const AdminDashboard = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
-  
+
   // User creation dialog
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
@@ -84,10 +85,14 @@ const AdminDashboard = () => {
   const [createLoading, setCreateLoading] = useState(false);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [csvFile, setCsvFile] = useState(null);
-  
+
   // Snackbar
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [passwordDialog, setPasswordDialog] = useState({ open: false, email: '', password: '' });
+
+  // Delete confirmation
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [courseToDelete, setCourseToDelete] = useState(null);
 
   const TaxonomyManager = ({ type }) => {
     const [items, setItems] = useState([]);
@@ -177,7 +182,7 @@ const AdminDashboard = () => {
       if (authToken) {
         axios.defaults.headers.common['Authorization'] = `Bearer ${authToken}`;
       }
-      
+
       const response = await axios.get('/api/admin/stats');
       setStats(response.data.data);
     } catch (error) {
@@ -197,7 +202,7 @@ const AdminDashboard = () => {
       if (authToken) {
         axios.defaults.headers.common['Authorization'] = `Bearer ${authToken}`;
       }
-      
+
       const response = await axios.get('/api/admin/users', {
         params: { page: pageNum, limit: 10, search }
       });
@@ -213,9 +218,13 @@ const AdminDashboard = () => {
   };
 
   useEffect(() => {
-    fetchStats();
-    fetchUsers();
-  }, []);
+    // Only fetch data when token is available
+    const authToken = token || localStorage.getItem('token');
+    if (authToken && authUser) {
+      fetchStats();
+      fetchUsers();
+    }
+  }, [token, authUser]);
 
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
@@ -249,14 +258,30 @@ const AdminDashboard = () => {
     }
   };
 
-  const deleteCourse = async (course) => {
-    if (!window.confirm(`"${course.title}" will be deleted. Are you sure?`)) return;
+  const deleteCourse = (course) => {
+    setCourseToDelete(course);
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!courseToDelete) return;
+
     try {
-      await axios.delete(`/api/admin/courses/${course.id}`);
-      setCourses(prev => prev.filter(c => c.id !== course.id));
+      // Ensure token is set
+      const authToken = token || localStorage.getItem('token');
+      if (authToken) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${authToken}`;
+      }
+
+      await axios.delete(`/api/admin/courses/${courseToDelete.id}`);
+      setCourses(prev => prev.filter(c => c.id !== courseToDelete.id));
       setSnackbar({ open: true, message: 'Course deleted', severity: 'success' });
     } catch (e) {
-      setSnackbar({ open: true, message: 'Failed to delete course', severity: 'error' });
+      console.error('Error deleting course:', e);
+      setSnackbar({ open: true, message: e?.response?.data?.message || 'Failed to delete course', severity: 'error' });
+    } finally {
+      setDeleteConfirmOpen(false);
+      setCourseToDelete(null);
     }
   };
 
@@ -273,9 +298,9 @@ const AdminDashboard = () => {
       if (authToken) {
         axios.defaults.headers.common['Authorization'] = `Bearer ${authToken}`;
       }
-      
+
       const response = await axios.post('/api/admin/users', newUser);
-      
+
       // Always show password dialog if backend returned a temp password
       if (response.data?.data?.tempPassword) {
         setPasswordDialog({
@@ -284,10 +309,10 @@ const AdminDashboard = () => {
           password: response.data.data.tempPassword
         });
       }
-      
-      setSnackbar({ 
-        open: true, 
-        message: response.data.message || 'User created successfully', 
+
+      setSnackbar({
+        open: true,
+        message: response.data.message || 'User created successfully',
         severity: response.data.data.emailSent ? 'success' : 'warning'
       });
       setCreateDialogOpen(false);
@@ -295,10 +320,10 @@ const AdminDashboard = () => {
       fetchUsers();
       if (tabValue === 0) fetchStats();
     } catch (error) {
-      setSnackbar({ 
-        open: true, 
-        message: error.response?.data?.message || 'Failed to create user', 
-        severity: 'error' 
+      setSnackbar({
+        open: true,
+        message: error.response?.data?.message || 'Failed to create user',
+        severity: 'error'
       });
     } finally {
       setCreateLoading(false);
@@ -318,7 +343,7 @@ const AdminDashboard = () => {
       if (authToken) {
         axios.defaults.headers.common['Authorization'] = `Bearer ${authToken}`;
       }
-      
+
       const formData = new FormData();
       formData.append('file', csvFile);
       formData.append('sendEmails', newUser.sendEmail);
@@ -328,25 +353,25 @@ const AdminDashboard = () => {
       });
 
       const { created, failed, errors } = response.data.data;
-      setSnackbar({ 
-        open: true, 
+      setSnackbar({
+        open: true,
         message: `Bulk creation completed: ${created} created, ${failed} failed`,
         severity: failed > 0 ? 'warning' : 'success'
       });
-      
+
       if (errors.length > 0) {
         console.error('Bulk creation errors:', errors);
       }
-      
+
       setBulkDialogOpen(false);
       setCsvFile(null);
       fetchUsers();
       if (tabValue === 0) fetchStats();
     } catch (error) {
-      setSnackbar({ 
-        open: true, 
-        message: error.response?.data?.message || 'Failed to bulk create users', 
-        severity: 'error' 
+      setSnackbar({
+        open: true,
+        message: error.response?.data?.message || 'Failed to bulk create users',
+        severity: 'error'
       });
     } finally {
       setBulkLoading(false);
@@ -362,16 +387,16 @@ const AdminDashboard = () => {
       if (authToken) {
         axios.defaults.headers.common['Authorization'] = `Bearer ${authToken}`;
       }
-      
+
       await axios.delete(`/api/admin/users/${userId}`);
       setSnackbar({ open: true, message: 'User deleted successfully', severity: 'success' });
       fetchUsers();
       if (tabValue === 0) fetchStats();
     } catch (error) {
-      setSnackbar({ 
-        open: true, 
-        message: error.response?.data?.message || 'Failed to delete user', 
-        severity: 'error' 
+      setSnackbar({
+        open: true,
+        message: error.response?.data?.message || 'Failed to delete user',
+        severity: 'error'
       });
     }
   };
@@ -578,24 +603,24 @@ const AdminDashboard = () => {
                             </TableCell>
                             <TableCell>{user.email}</TableCell>
                             <TableCell>
-                              <Chip 
-                                label={user.role} 
+                              <Chip
+                                label={user.role}
                                 color={
                                   user.role === 'admin' ? 'error' :
-                                  user.role === 'teacher' ? 'primary' : 'default'
+                                    user.role === 'teacher' ? 'primary' : 'default'
                                 }
                                 size="small"
                               />
                             </TableCell>
                             <TableCell>
-                            <Chip 
-                              label={user.isActive ? t('admin.table.active') : t('admin.table.inactive')} 
+                              <Chip
+                                label={user.isActive ? t('admin.table.active') : t('admin.table.inactive')}
                                 color={user.isActive ? 'success' : 'error'}
                                 size="small"
                               />
                               {user.isPasswordChangeRequired && (
-                                <Chip 
-                                label={t('admin.table.passwordRequired')} 
+                                <Chip
+                                  label={t('admin.table.passwordRequired')}
                                   color="warning"
                                   size="small"
                                   sx={{ ml: 1 }}
@@ -608,8 +633,8 @@ const AdminDashboard = () => {
                               </Typography>
                             </TableCell>
                             <TableCell>
-                              <IconButton 
-                                size="small" 
+                              <IconButton
+                                size="small"
                                 color="error"
                                 onClick={() => handleDeleteUser(user.id)}
                                 disabled={user.id === authUser?.id}
@@ -626,9 +651,9 @@ const AdminDashboard = () => {
 
                 {totalPages > 1 && (
                   <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
-                    <Pagination 
-                      count={totalPages} 
-                      page={page} 
+                    <Pagination
+                      count={totalPages}
+                      page={page}
                       onChange={handlePageChange}
                       color="primary"
                     />
@@ -774,9 +799,9 @@ const AdminDashboard = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCreateDialogOpen(false)}>{t('admin.createDialog.cancel')}</Button>
-          <Button 
-            onClick={handleCreateUser} 
-            variant="contained" 
+          <Button
+            onClick={handleCreateUser}
+            variant="contained"
             disabled={createLoading}
           >
             {createLoading ? <CircularProgress size={24} /> : t('admin.createDialog.create')}
@@ -816,9 +841,9 @@ const AdminDashboard = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setBulkDialogOpen(false)}>{t('admin.bulkDialog.cancel')}</Button>
-          <Button 
-            onClick={handleBulkCreate} 
-            variant="contained" 
+          <Button
+            onClick={handleBulkCreate}
+            variant="contained"
             disabled={bulkLoading || !csvFile}
           >
             {bulkLoading ? <CircularProgress size={24} /> : t('admin.bulkDialog.uploadCreate')}
@@ -836,7 +861,7 @@ const AdminDashboard = () => {
             </Typography>
             <Typography variant="body2">
               {/* Keep as-is: detailed environment note, not localized */}
-              Resend test modunda aktif. Sadece kayıtlı email adresinize (utkcursor@gmail.com) gönderebilirsiniz. 
+              Resend test modunda aktif. Sadece kayıtlı email adresinize (utkcursor@gmail.com) gönderebilirsiniz.
               Diğer email adreslerine göndermek için domain doğrulaması yapmanız gerekiyor.
               <br />
               <strong>Şimdilik:</strong> Aşağıdaki şifreyi kopyalayıp kullanıcıya manuel olarak iletin.
@@ -878,6 +903,30 @@ const AdminDashboard = () => {
         <DialogActions>
           <Button onClick={() => setPasswordDialog({ ...passwordDialog, open: false })}>
             {t('admin.passwordDialog.close')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteConfirmOpen}
+        onClose={() => setDeleteConfirmOpen(false)}
+        aria-labelledby="delete-dialog-title"
+      >
+        <DialogTitle id="delete-dialog-title">
+          {t('admin.courses.deleteTitle', 'Delete Course')}
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {courseToDelete && t('admin.courses.deleteConfirm', { title: courseToDelete.title, defaultValue: `Are you sure you want to delete "${courseToDelete.title}"? This action cannot be undone.` })}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmOpen(false)} color="primary">
+            {t('common.cancel', 'Cancel')}
+          </Button>
+          <Button onClick={handleConfirmDelete} color="error" variant="contained" autoFocus>
+            {t('common.delete', 'Delete')}
           </Button>
         </DialogActions>
       </Dialog>

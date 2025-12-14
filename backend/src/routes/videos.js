@@ -8,7 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const { Video, User, Progress, Course } = require('../models');
 const videoController = require('../controllers/videoController');
-const { processVideoResolutions } = require('..//utils/videoProcessor');
+const { processVideoResolutions, getVideoDuration } = require('../utils/videoProcessor');
 const { v4: uuidv4 } = require('uuid');
 const logger = require('../utils/logger');
 
@@ -177,6 +177,18 @@ router.post('/upload', auth, requireTeacher, (req, res, next) => {
     const outputDir = path.join(__dirname, '../../uploads/videos');
     const baseFilename = path.parse(req.file.filename).name;
 
+    // Try to get video duration from file using ffprobe
+    let videoDuration = parseInt(duration) || null;
+    if (!videoDuration || videoDuration <= 0) {
+      try {
+        videoDuration = await getVideoDuration(inputFilePath);
+        logger.info(`Extracted video duration: ${videoDuration} seconds`);
+      } catch (error) {
+        logger.warn('Could not extract video duration, using provided or default:', error.message);
+        videoDuration = parseInt(duration) || 1; // Fallback to provided duration or 1 second
+      }
+    }
+
     // Create immediately with original only; mark processing
     const originalVariant = [{
       quality: '720p',
@@ -187,7 +199,7 @@ router.post('/upload', auth, requireTeacher, (req, res, next) => {
     const video = await Video.create({
       title: title || req.file.originalname,
       description: description || '',
-      duration: parseInt(duration) || 1,
+      duration: videoDuration,
       order: parseInt(order) || 0,
       fileUrl: originalVariant[0].url,
       fileSize: req.file.size,
