@@ -12,7 +12,7 @@ This guide explains how to deploy Viducate to any Linux server (Raspberry Pi, VP
 
 1.  **Clone the Repository** (if not already done):
     ```bash
-    git clone https://github.com/YOUR_GITHUB_USERNAME/viducate.git
+    git clone https://github.com/mutkukucuk/viducate.git
     cd viducate
     ```
 
