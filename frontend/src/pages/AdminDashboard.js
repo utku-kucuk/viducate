@@ -50,7 +50,9 @@ import {
   Edit as EditIcon,
   Delete as DeleteIcon,
   Email as EmailIcon,
-  Visibility as VisibilityIcon
+  Visibility as VisibilityIcon,
+  ListAlt as LogsIcon,
+  FilterList as FilterIcon
 } from '@mui/icons-material';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
@@ -85,6 +87,15 @@ const AdminDashboard = () => {
   const [createLoading, setCreateLoading] = useState(false);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [csvFile, setCsvFile] = useState(null);
+  // System Logs state
+  const [logs, setLogs] = useState([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [logsPage, setLogsPage] = useState(1);
+  const [logsTotalPages, setLogsTotalPages] = useState(1);
+  const [logsSearch, setLogsSearch] = useState('');
+  const [logsLevel, setLogsLevel] = useState('');
+  const [logsStartDate, setLogsStartDate] = useState('');
+  const [logsEndDate, setLogsEndDate] = useState('');
 
   // Snackbar
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
@@ -232,6 +243,10 @@ const AdminDashboard = () => {
       fetchUsers();
     } else if (newValue === 2) {
       fetchCourses();
+    } else if (newValue === 3) {
+      fetchLogs();
+    } else if (newValue === 4 || newValue === 5) {
+      // Taxonomy tabs
     }
   };
 
@@ -244,6 +259,36 @@ const AdminDashboard = () => {
       setSnackbar({ open: true, message: 'Failed to load courses', severity: 'error' });
     } finally {
       setCoursesLoading(false);
+    }
+  };
+
+  const fetchLogs = async (pageNum = 1) => {
+    setLogsLoading(true);
+    try {
+      // Ensure token is set
+      const authToken = token || localStorage.getItem('token');
+      if (authToken) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${authToken}`;
+      }
+
+      const params = {
+        page: pageNum,
+        limit: 20,
+        search: logsSearch,
+        level: logsLevel,
+        startDate: logsStartDate,
+        endDate: logsEndDate
+      };
+
+      const response = await axios.get('/api/admin/logs', { params });
+      setLogs(response.data.data.logs);
+      setLogsTotalPages(response.data.data.pagination.totalPages);
+      setLogsPage(pageNum);
+    } catch (error) {
+      console.error('Error fetching logs:', error);
+      setSnackbar({ open: true, message: 'Failed to load logs', severity: 'error' });
+    } finally {
+      setLogsLoading(false);
     }
   };
 
@@ -448,7 +493,9 @@ const AdminDashboard = () => {
           <Tab label={t('admin.tabs.dashboard')} />
           <Tab label={t('admin.tabs.userManagement')} />
           <Tab label={t('admin.courses.title', 'Courses')} />
-          <Tab label={t('admin.taxonomy.title', 'Taxonomy')} />
+          <Tab label={t('admin.logs.title', 'System Logs')} />
+          <Tab label={t('admin.taxonomy.categories', 'Categories')} />
+          <Tab label={t('admin.taxonomy.departments', 'Departments')} />
         </Tabs>
       </Box>
 
@@ -730,17 +777,130 @@ const AdminDashboard = () => {
         </Card>
       )}
 
-      {tabValue === 3 && (
-        <Card>
-          <CardContent>
-            <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>{t('admin.taxonomy.categories', 'Categories')}</Typography>
-            <TaxonomyManager type="categories" />
-            <Divider sx={{ my: 3 }} />
-            <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>{t('admin.taxonomy.departments', 'Departments')}</Typography>
-            <TaxonomyManager type="departments" />
-          </CardContent>
-        </Card>
-      )}
+      {/* System Logs Tab */}
+      <div role="tabpanel" hidden={tabValue !== 3}>
+        {tabValue === 3 && (
+          <Box>
+            <Paper sx={{ p: 2, mb: 3 }}>
+              <Grid container spacing={2} alignItems="center">
+                <Grid item xs={12} md={3}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel id="log-level-label">Level</InputLabel>
+                    <Select
+                      labelId="log-level-label"
+                      value={logsLevel}
+                      label="Level"
+                      onChange={(e) => setLogsLevel(e.target.value)}
+                    >
+                      <MenuItem value="">All Levels</MenuItem>
+                      <MenuItem value="error">Error</MenuItem>
+                      <MenuItem value="warn">Warning</MenuItem>
+                      <MenuItem value="info">Info</MenuItem>
+                      <MenuItem value="debug">Debug</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12} md={3}>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    label="Search Logs"
+                    value={logsSearch}
+                    onChange={(e) => setLogsSearch(e.target.value)}
+                    placeholder="Search message..."
+                  />
+                </Grid>
+                <Grid item xs={12} md={2}>
+                  <Button
+                    variant="contained"
+                    onClick={() => fetchLogs(1)}
+                    disabled={logsLoading}
+                    startIcon={<RefreshIcon />}
+                    fullWidth
+                  >
+                    Refresh
+                  </Button>
+                </Grid>
+              </Grid>
+            </Paper>
+
+            <TableContainer component={Paper}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Level</TableCell>
+                    <TableCell>Time</TableCell>
+                    <TableCell>Message</TableCell>
+                    <TableCell>User</TableCell>
+                    <TableCell>Context</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {logsLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={5} align="center" sx={{ py: 3 }}>
+                        <CircularProgress />
+                      </TableCell>
+                    </TableRow>
+                  ) : logs.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} align="center" sx={{ py: 3 }}>
+                        No logs found
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    logs.map((log) => (
+                      <TableRow key={log.id} hover>
+                        <TableCell>
+                          <Chip
+                            label={log.level.toUpperCase()}
+                            size="small"
+                            color={log.level === 'error' ? 'error' : log.level === 'warn' ? 'warning' : 'default'}
+                            variant={log.info ? 'outlined' : 'filled'}
+                            sx={{ minWidth: 70 }}
+                          />
+                        </TableCell>
+                        <TableCell sx={{ whiteSpace: 'nowrap', fontSize: '0.85rem' }}>
+                          {new Date(log.createdAt).toLocaleString()}
+                        </TableCell>
+                        <TableCell sx={{ maxWidth: 400, wordBreak: 'break-word', fontFamily: 'monospace', fontSize: '0.85rem' }}>
+                          {log.message}
+                          {log.meta && Object.keys(log.meta).length > 0 && (
+                            <Box sx={{ mt: 0.5, fontSize: '0.75rem', color: 'text.secondary' }}>
+                              <details>
+                                <summary>Meta Data</summary>
+                                <pre style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify(log.meta, null, 2)}</pre>
+                              </details>
+                            </Box>
+                          )}
+                        </TableCell>
+                        <TableCell sx={{ fontSize: '0.85rem' }}>{log.userId || '-'}</TableCell>
+                        <TableCell sx={{ fontSize: '0.85rem' }}>{log.context || '-'}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+
+            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+              <Pagination
+                count={logsTotalPages}
+                page={logsPage}
+                onChange={(e, v) => fetchLogs(v)}
+                color="primary"
+              />
+            </Box>
+          </Box>
+        )}
+      </div>
+
+      <div role="tabpanel" hidden={tabValue !== 4}>
+        {tabValue === 4 && <TaxonomyManager type="categories" />}
+      </div>
+      <div role="tabpanel" hidden={tabValue !== 5}>
+        {tabValue === 5 && <TaxonomyManager type="departments" />}
+      </div>
 
       {/* Create User Dialog */}
       <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="sm" fullWidth>

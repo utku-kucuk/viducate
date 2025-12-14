@@ -1,4 +1,4 @@
-const { User, Course, Video, Progress, UserCourse } = require('../models');
+const { User, Course, Video, Progress, UserCourse, Log } = require('../models');
 const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
 const { generateStrongPassword, sendCredentialsEmail, sendBulkCredentialsEmails } = require('../services/emailService');
@@ -500,8 +500,8 @@ const createUser = async (req, res) => {
         emailSent,
         emailError: emailError || undefined
       },
-      message: emailSent 
-        ? 'Kullanıcı oluşturuldu ve email gönderildi. Geçici şifre aşağıda görüntülenmektedir.' 
+      message: emailSent
+        ? 'Kullanıcı oluşturuldu ve email gönderildi. Geçici şifre aşağıda görüntülenmektedir.'
         : 'Kullanıcı oluşturuldu. Email gönderilemedi; geçici şifre aşağıda görüntülenmektedir.'
     });
   } catch (error) {
@@ -627,7 +627,7 @@ const bulkCreateUsers = async (req, res) => {
         tempPassword: r.tempPassword, // Use stored tempPassword
         firstName: r.firstName
       }));
-      
+
       emailResults = await sendBulkCredentialsEmails(usersForEmail);
 
       // Update results with email status and remove tempPassword from response if emails sent
@@ -670,6 +670,49 @@ const bulkCreateUsers = async (req, res) => {
   }
 };
 
+// Get system logs with pagination and filtering
+const getSystemLogs = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, level, search, startDate, endDate } = req.query;
+    const offset = (page - 1) * limit;
+
+    const where = {};
+    if (level) where.level = level;
+    if (search) {
+      where.message = { [Op.iLike]: `%${search}%` };
+    }
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) where.createdAt[Op.gte] = new Date(startDate);
+      if (endDate) where.createdAt[Op.lte] = new Date(endDate);
+    }
+
+    const { count, rows } = await Log.findAndCountAll({
+      where,
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [['createdAt', 'DESC']]
+    });
+
+    res.json({
+      success: true,
+      data: {
+        logs: rows,
+        pagination: {
+          totalItems: count,
+          totalPages: Math.ceil(count / limit),
+          currentPage: parseInt(page),
+          itemsPerPage: parseInt(limit)
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching system logs:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch logs' });
+  }
+};
+
 module.exports = {
   getPlatformStats,
   getAllUsers,
@@ -678,6 +721,7 @@ module.exports = {
   deleteUser,
   getAllCoursesAdmin,
   deleteCourseAdmin,
+  getSystemLogs,
   createUser,
   bulkCreateUsers,
   updateCourseAdmin,

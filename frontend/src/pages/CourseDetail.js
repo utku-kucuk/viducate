@@ -153,8 +153,10 @@ const CourseDetail = () => {
           console.error('Error fetching course:', err);
           throw err;
         }),
-        user?.role === 'student'
-          ? axios.get(`/api/progress/course/${courseId}`).catch(err => {
+        // Fetch progress for any authenticated user (excluding explicit preview overrides if needed)
+        // We catch errors so 403/404 won't break the page
+        user
+          ? axios.get(`/api/progress/course/${courseId}?_t=${Date.now()}`).catch(err => {
             console.warn('Error fetching progress (non-critical):', err);
             return { data: { data: [] } };
           })
@@ -202,7 +204,9 @@ const CourseDetail = () => {
         allVideos = courseData.videos.map((v, idx) => ({ ...v, _originalIndex: idx }));
       }
       // sort by order if available, but preserve original index
-      allVideos.sort((a, b) => (a.order || 0) - (b.order || 0));
+      // REMOVED sort: The global sort destroys chapter/section hierarchy if 'order' is relative (e.g. 1, 2, 3 per section).
+      // We must trust the traversal order (Chapter -> Section -> Video) to match the visual hierarchy.
+      // allVideos.sort((a, b) => (a.order || 0) - (b.order || 0));
       setFlatVideos(allVideos);
 
       const courseProgressList = progressResponse?.data?.progress || progressResponse?.data?.data || [];
@@ -215,12 +219,20 @@ const CourseDetail = () => {
           try {
             // Store progress by videoId (primary key)
             const vidId = String(p.videoId);
-            progressMap[vidId] = p;
+            // Only set if not already present (since list is sorted by lastWatchedAt DESC, first one is newest)
+            if (!progressMap[vidId]) {
+              progressMap[vidId] = p;
+            }
             // Also store by any matching IDs from all videos (including chapter videos) for easier lookup
             if (Array.isArray(allVideos)) {
               allVideos.forEach(v => {
                 if (v && v.id && String(v.id) === vidId) {
-                  progressMap[String(v.id)] = p;
+                  // Only set aliases if not already mapped or if we are mapped to a different object?
+                  // Actually, vidId is unique per iteration. But v.id might be shared?
+                  // Safest is to only set if this specific v.id key is missing.
+                  if (!progressMap[String(v.id)]) {
+                    progressMap[String(v.id)] = p;
+                  }
                 }
               });
             }
@@ -228,7 +240,9 @@ const CourseDetail = () => {
             if (Array.isArray(courseData.videos)) {
               courseData.videos.forEach(v => {
                 if (v && v.id && String(v.id) === vidId) {
-                  progressMap[String(v.id)] = p;
+                  if (!progressMap[String(v.id)]) {
+                    progressMap[String(v.id)] = p;
+                  }
                 }
               });
             }
@@ -310,9 +324,11 @@ const CourseDetail = () => {
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleVisibilityChange);
     return () => {
       if (refreshTimeout) clearTimeout(refreshTimeout);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleVisibilityChange);
     };
   }, [fetchCourseData, loading]);
 

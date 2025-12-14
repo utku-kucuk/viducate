@@ -80,7 +80,7 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey, 
         return;
       }
       if (!courseData || !courseData.chapters) return;
-      
+
       try {
         setLoading(true);
         // Ensure auth header is present (handles hard refreshes)
@@ -89,7 +89,7 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey, 
           axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
         }
         const allVideos = [];
-        
+
         // Extract all videos from course structure
         courseData.chapters.forEach(chapter => {
           if (chapter.sections && Array.isArray(chapter.sections)) {
@@ -210,7 +210,7 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey, 
   const handleVideoClick = (video) => {
     const realId = resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id;
     const isFile = detectFileType(video);
-    
+
     if (onVideoSelect) {
       // Pass file type information to the callback
       onVideoSelect({ ...video, id: realId, isFile });
@@ -223,11 +223,12 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey, 
     const realId = resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id;
     const progress = videoProgress[realId];
     if (!progress) return 'not-started';
-    
-    // CRITICAL: Trust server's isCompleted flag ONLY - no fallback to watchPercentage
-    // Server is the single source of truth for completion status per COMPLETION_RULES.md
-    // watchPercentage >= 90 check removed to prevent false positives
-    if (progress.isCompleted === true) return 'completed';
+
+    // Align completion logic with CourseDetail.js to ensure synchronization
+    // Use isCompleted from server, but fallback to watchPercentage >= 90 for navigation consistency
+    const isCompleted = progress.isCompleted || (progress.watchPercentage >= 90);
+
+    if (isCompleted) return 'completed';
     if (progress.watchPercentage > 0) return 'in-progress';
     return 'not-started';
   };
@@ -303,7 +304,7 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey, 
   const isVideoLocked = (video) => {
     // Course owners (teachers/admins) and admin preview mode can access all stages without restrictions
     if (canAccessAll) return false;
-    
+
     const ordered = getOrderedItems();
     if (ordered.length === 0) return true;
     const firstIncomplete = getFirstIncompleteIndex(ordered);
@@ -346,10 +347,10 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey, 
 
   const calculateCourseProgress = () => {
     if (!courseData || !courseData.chapters) return 0;
-    
+
     let totalItems = 0;
     let completedItems = 0;
-    
+
     courseData.chapters.forEach(chapter => {
       if (chapter.sections && Array.isArray(chapter.sections)) {
         chapter.sections.forEach(section => {
@@ -369,7 +370,7 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey, 
         });
       }
     });
-    
+
     return totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
   };
 
@@ -380,7 +381,7 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey, 
   const courseProgress = calculateCourseProgress();
 
   return (
-    <Box sx={{ 
+    <Box sx={{
       width: sidebarOpen ? 300 : 60,
       minHeight: '100vh',
       bgcolor: 'grey.50',
@@ -431,7 +432,7 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey, 
             >
               <AccordionSummary
                 expandIcon={<ExpandMoreIcon />}
-                sx={{ 
+                sx={{
                   minHeight: 48,
                   '&.Mui-expanded': { minHeight: 48 }
                 }}
@@ -440,37 +441,37 @@ const CourseSidebar = ({ courseData, currentVideoId, onVideoSelect, refreshKey, 
                   {chapter.title}
                 </Typography>
               </AccordionSummary>
-              
+
               <AccordionDetails sx={{ p: 0 }}>
                 {chapter.sections && chapter.sections.map((section, sectionIndex) => (
-                  <Box key={section?.id || `section-${chapterIndex}-${sectionIndex}` } sx={{ mb: 1 }}>
-                  <Box sx={{ px: 2, py: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Typography 
-                      variant="body2" 
-                      color="textSecondary" 
-                      sx={{ fontWeight: 'medium' }}
-                    >
-                      {section.title}
-                    </Typography>
-                    {(() => {
-                      const filesCount = (section.videos || []).filter(v => (v?.type === 'file') || /(\.pdf|\/uploads\/files\/)/i.test(String(v?.fileUrl || ''))).length;
-                      const videosCount = (section.videos || []).length - filesCount;
-                      return (
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Chip label={`${filesCount} ${filesCount === 1 ? 'file' : 'files'}`} size="small" />
-                          <Chip label={`${videosCount} ${videosCount === 1 ? 'video' : 'videos'}`} size="small" />
-                        </Box>
-                      );
-                    })()}
-                  </Box>
-                    
+                  <Box key={section?.id || `section-${chapterIndex}-${sectionIndex}`} sx={{ mb: 1 }}>
+                    <Box sx={{ px: 2, py: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <Typography
+                        variant="body2"
+                        color="textSecondary"
+                        sx={{ fontWeight: 'medium' }}
+                      >
+                        {section.title}
+                      </Typography>
+                      {(() => {
+                        const filesCount = (section.videos || []).filter(v => (v?.type === 'file') || /(\.pdf|\/uploads\/files\/)/i.test(String(v?.fileUrl || ''))).length;
+                        const videosCount = (section.videos || []).length - filesCount;
+                        return (
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Chip label={`${filesCount} ${filesCount === 1 ? 'file' : 'files'}`} size="small" />
+                            <Chip label={`${videosCount} ${videosCount === 1 ? 'video' : 'videos'}`} size="small" />
+                          </Box>
+                        );
+                      })()}
+                    </Box>
+
                     <List dense>
                       {section.videos && section.videos.map((video, videoIndex) => {
                         const isLocked = isVideoLocked(video);
                         const isCurrent = video.id === currentVideoId;
                         const status = getVideoStatus(video);
                         const quizInfo = videoQuizInfo[(resolveVideoId(video) || placeholderToRealId[video.id || video.title] || video.id)] || {};
-                        
+
                         const keyId = video?.id || `${chapterIndex}-${sectionIndex}-${videoIndex}`;
                         return (
                           <Box key={keyId}>

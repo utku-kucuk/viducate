@@ -17,7 +17,8 @@ const {
   deleteCategoryAdmin,
   listDepartments,
   createDepartmentAdmin,
-  deleteDepartmentAdmin
+  deleteDepartmentAdmin,
+  getSystemLogs
 } = require('../controllers/adminController');
 const { body } = require('express-validator');
 const multer = require('multer');
@@ -26,10 +27,10 @@ const multer = require('multer');
 const upload = multer({
   storage: multer.memoryStorage(),
   fileFilter: (req, file, cb) => {
-    if (file.mimetype === 'text/csv' || 
-        file.mimetype === 'application/vnd.ms-excel' ||
-        file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-        file.originalname.endsWith('.csv')) {
+    if (file.mimetype === 'text/csv' ||
+      file.mimetype === 'application/vnd.ms-excel' ||
+      file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      file.originalname.endsWith('.csv')) {
       cb(null, true);
     } else {
       cb(new Error('Only CSV files are allowed'), false);
@@ -47,6 +48,8 @@ const roleValidation = [
 
 // Platform statistics
 router.get('/stats', auth, requireAdmin, getPlatformStats);
+// System logs
+router.get('/logs', auth, requireAdmin, getSystemLogs);
 
 // User management
 router.get('/users', auth, requireAdmin, getAllUsers);
