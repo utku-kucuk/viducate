@@ -81,6 +81,14 @@ const User = sequelize.define('User', {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
     allowNull: false
+  },
+  authProvider: {
+    type: DataTypes.STRING,
+    defaultValue: 'local',
+    allowNull: false,
+    validate: {
+      isIn: [['local', 'ldap']]
+    }
   }
 }, {
   timestamps: true,
@@ -99,11 +107,11 @@ const User = sequelize.define('User', {
 });
 
 // Instance methods
-User.prototype.comparePassword = async function(candidatePassword) {
+User.prototype.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-User.prototype.getFullName = function() {
+User.prototype.getFullName = function () {
   return `${this.firstName} ${this.lastName}`;
 };
 
