@@ -60,28 +60,76 @@ const register = async (req, res) => {
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
+    const ldapService = require('../services/ldapService');
+    const bcrypt = require('bcryptjs');
 
-    // Find user
-    const user = await User.findOne({ where: { email } });
-    if (!user) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`[auth] Login failed: user not found for email ${email}`);
+    // Find existing user
+    let user = await User.findOne({ where: { email } });
+
+    // If user exists
+    if (user) {
+      // Check if user is active
+      if (!user.isActive) {
+        return res.status(401).json({ error: 'Account is deactivated.' });
       }
-      return res.status(401).json({ error: 'Invalid email or password.' });
-    }
 
-    // Check if user is active
-    if (!user.isActive) {
-      return res.status(401).json({ error: 'Account is deactivated.' });
-    }
-
-    // Verify password
-    const isValidPassword = await user.comparePassword(password);
-    if (!isValidPassword) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`[auth] Login failed: invalid password for email ${email}`);
+      // If user is LDAP user, authenticate via LDAP
+      if (user.authProvider === 'ldap') {
+        if (ldapService.isEnabled()) {
+          const ldapResult = await ldapService.authenticateUser(email, password);
+          if (!ldapResult.success) {
+            console.log(`[auth] LDAP auth failed for ${email}: ${ldapResult.error}`);
+            return res.status(401).json({ error: 'Invalid email or password.' });
+          }
+        } else {
+          return res.status(401).json({ error: 'LDAP authentication is not available.' });
+        }
+      } else {
+        // Local user - verify password
+        const isValidPassword = await user.comparePassword(password);
+        if (!isValidPassword) {
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`[auth] Login failed: invalid password for email ${email}`);
+          }
+          return res.status(401).json({ error: 'Invalid email or password.' });
+        }
       }
-      return res.status(401).json({ error: 'Invalid email or password.' });
+    } else {
+      // User not found in local DB - try LDAP if enabled
+      if (ldapService.isEnabled()) {
+        console.log(`[auth] User ${email} not found locally, trying LDAP...`);
+        const ldapResult = await ldapService.authenticateUser(email, password);
+
+        if (!ldapResult.success) {
+          console.log(`[auth] LDAP auth failed for ${email}: ${ldapResult.error}`);
+          return res.status(401).json({ error: 'Invalid email or password.' });
+        }
+
+        // LDAP auth successful - auto-create user as teacher
+        console.log(`[auth] LDAP auth successful for ${email}, creating local user...`);
+
+        // Generate a random password (won't be used for LDAP users)
+        const randomPassword = uuidv4();
+        const hashedPassword = await bcrypt.hash(randomPassword, 12);
+
+        user = await User.create({
+          email: ldapResult.user.email || email,
+          password: hashedPassword,
+          firstName: ldapResult.user.firstName || 'AD',
+          lastName: ldapResult.user.lastName || 'User',
+          role: 'teacher', // Default role for AD users
+          authProvider: 'ldap',
+          isEmailVerified: true, // AD users are pre-verified
+          isActive: true
+        });
+
+        console.log(`[auth] Created LDAP user: ${user.email} with role: ${user.role}`);
+      } else {
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[auth] Login failed: user not found for email ${email}`);
+        }
+        return res.status(401).json({ error: 'Invalid email or password.' });
+      }
     }
 
     // Generate token
@@ -100,7 +148,8 @@ const login = async (req, res) => {
         role: user.role,
         isEmailVerified: user.isEmailVerified,
         profilePicture: user.profilePicture,
-        isPasswordChangeRequired: user.isPasswordChangeRequired
+        isPasswordChangeRequired: user.isPasswordChangeRequired,
+        authProvider: user.authProvider
       },
       token
     });

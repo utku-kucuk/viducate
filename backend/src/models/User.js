@@ -81,6 +81,14 @@ const User = sequelize.define('User', {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
     allowNull: false
+  },
+  authProvider: {
+    type: DataTypes.STRING,
+    defaultValue: 'local',
+    allowNull: false,
+    validate: {
+      isIn: [['local', 'ldap']]
+    }
   }
 }, {
   timestamps: true,
