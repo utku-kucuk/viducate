@@ -163,6 +163,5 @@ module.exports = {
   QuizAttempt,
   AttemptAnswer,
   Category,
-  Department,
-  Log
+  Department
 };
