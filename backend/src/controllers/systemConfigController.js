@@ -1,16 +1,15 @@
-```
 const { SystemConfig } = require('../models');
 const { encrypt } = require('../utils/encryption');
 const ldapService = require('../services/ldapService');
 
 const getLdapConfig = async (req, res) => {
-  // Security Check: Only Super Admin can view specific config
-  const superAdminEmail = process.env.SUPER_ADMIN_EMAIL || 'admin@viducate.local';
-  if (req.user.email !== superAdminEmail) {
-    return res.status(403).json({ error: 'Access denied. Only Super Admin can view this configuration.' });
-  }
+    // Security Check: Only Super Admin can view specific config
+    const superAdminEmail = process.env.SUPER_ADMIN_EMAIL || 'admin@viducate.local';
+    if (req.user.email !== superAdminEmail) {
+        return res.status(403).json({ error: 'Access denied. Only Super Admin can view this configuration.' });
+    }
 
-  try {
+    try {
         const configs = await SystemConfig.findAll({
             where: {
                 key: ['ldap_bind_dn', 'ldap_enabled']
@@ -33,13 +32,13 @@ const getLdapConfig = async (req, res) => {
 };
 
 const updateLdapConfig = async (req, res) => {
-  // Security Check: Only Super Admin can modify config
-  const superAdminEmail = process.env.SUPER_ADMIN_EMAIL || 'admin@viducate.local';
-  if (req.user.email !== superAdminEmail) {
-    return res.status(403).json({ error: 'Access denied. Only Super Admin can modify this configuration.' });
-  }
+    // Security Check: Only Super Admin can modify config
+    const superAdminEmail = process.env.SUPER_ADMIN_EMAIL || 'admin@viducate.local';
+    if (req.user.email !== superAdminEmail) {
+        return res.status(403).json({ error: 'Access denied. Only Super Admin can modify this configuration.' });
+    }
 
-  try {
+    try {
         const { ldapBindDn, ldapBindPassword, ldapEnabled } = req.body;
 
         // Update Bind DN
@@ -93,4 +92,3 @@ module.exports = {
     getLdapConfig,
     updateLdapConfig
 };
-```
