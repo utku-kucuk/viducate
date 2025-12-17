@@ -497,7 +497,9 @@ const AdminDashboard = () => {
           <Tab label={t('admin.logs.title', 'System Logs')} />
           <Tab label={t('admin.taxonomy.categories', 'Categories')} />
           <Tab label={t('admin.taxonomy.departments', 'Departments')} />
-          <Tab label={t('admin.settings.title', 'System Settings')} />
+          {authUser?.email === 'admin@viducate.local' && (
+            <Tab label={t('admin.settings.title', 'System Settings')} />
+          )}
         </Tabs>
       </Box>
 
@@ -904,7 +906,7 @@ const AdminDashboard = () => {
         {tabValue === 5 && <TaxonomyManager type="departments" />}
       </div>
       <div role="tabpanel" hidden={tabValue !== 6}>
-        {tabValue === 6 && <LdapSettings />}
+        {tabValue === 6 && authUser?.email === 'admin@viducate.local' && <LdapSettings />}
       </div>
 
       {/* Create User Dialog */}
