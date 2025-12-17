@@ -74,4 +74,10 @@ router.get('/departments', auth, requireAdmin, listDepartments);
 router.post('/departments', auth, requireAdmin, createDepartmentAdmin);
 router.delete('/departments/:id', auth, requireAdmin, deleteDepartmentAdmin);
 
+// LDAP Configuration
+const { getLdapConfig, updateLdapConfig } = require('../controllers/systemConfigController');
+router.get('/config/ldap', auth, requireAdmin, getLdapConfig);
+router.post('/config/ldap', auth, requireAdmin, updateLdapConfig);
+
 module.exports = router;
+

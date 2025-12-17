@@ -14,6 +14,7 @@ const AttemptAnswer = require('./AttemptAnswer');
 const Category = require('./Category');
 const Department = require('./Department');
 const Log = require('./Log');
+const SystemConfig = require('./SystemConfig');
 
 // User - Course relationships (Teacher creates courses)
 User.hasMany(Course, {
@@ -148,10 +149,13 @@ AttemptAnswer.belongsTo(Option, { foreignKey: 'optionId', as: 'option' });
 module.exports = {
   User,
   Course,
+  Module,
   Video,
   Progress,
-  UserCourse
-  , Note,
+  Log,
+  Note,
+  SystemConfig,
+  UserCourse,
   Quiz,
   Question,
   Option,

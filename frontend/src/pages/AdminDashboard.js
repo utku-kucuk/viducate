@@ -58,6 +58,7 @@ import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import LdapSettings from '../components/admin/LdapSettings';
 
 const AdminDashboard = () => {
   const { t } = useTranslation();
@@ -496,6 +497,7 @@ const AdminDashboard = () => {
           <Tab label={t('admin.logs.title', 'System Logs')} />
           <Tab label={t('admin.taxonomy.categories', 'Categories')} />
           <Tab label={t('admin.taxonomy.departments', 'Departments')} />
+          <Tab label={t('admin.settings.title', 'System Settings')} />
         </Tabs>
       </Box>
 
@@ -900,6 +902,9 @@ const AdminDashboard = () => {
       </div>
       <div role="tabpanel" hidden={tabValue !== 5}>
         {tabValue === 5 && <TaxonomyManager type="departments" />}
+      </div>
+      <div role="tabpanel" hidden={tabValue !== 6}>
+        {tabValue === 6 && <LdapSettings />}
       </div>
 
       {/* Create User Dialog */}

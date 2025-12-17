@@ -4,23 +4,64 @@
  */
 
 const ldap = require('ldapjs');
+const { SystemConfig } = require('../models');
+const { decrypt } = require('../utils/encryption');
 
 class LdapService {
     constructor() {
-        this.enabled = process.env.LDAP_ENABLED === 'true';
-        this.url = process.env.LDAP_URL;
-        this.baseDN = process.env.LDAP_BASE_DN;
-        this.bindDN = process.env.LDAP_BIND_DN;
-        this.bindPassword = process.env.LDAP_BIND_PASSWORD;
-        this.userSearchBase = process.env.LDAP_USER_SEARCH_BASE || this.baseDN;
-        this.tlsRejectUnauthorized = process.env.LDAP_TLS_REJECT_UNAUTHORIZED !== 'false';
+        this.config = {
+            url: process.env.LDAP_URL,
+            baseDN: process.env.LDAP_BASE_DN,
+            bindDN: process.env.LDAP_BIND_DN,
+            bindPassword: process.env.LDAP_BIND_PASSWORD,
+            userSearchBase: process.env.LDAP_USER_SEARCH_BASE,
+            tlsRejectUnauthorized: process.env.LDAP_TLS_REJECT_UNAUTHORIZED !== 'false',
+            enabled: process.env.LDAP_ENABLED === 'true'
+        };
+        this.isInitialized = false;
+    }
+
+    /**
+     * Initialize configuration from Database
+     */
+    async initialize() {
+        try {
+            // Fetch dynamic config from DB
+            const configs = await SystemConfig.findAll({
+                where: {
+                    key: ['ldap_bind_password', 'ldap_bind_dn', 'ldap_enabled']
+                }
+            });
+
+            const dbConfig = {};
+            configs.forEach(cfg => {
+                if (cfg.key === 'ldap_bind_password' && cfg.isEncrypted) {
+                    dbConfig.bindPassword = decrypt(cfg.value);
+                } else if (cfg.key === 'ldap_bind_dn') {
+                    dbConfig.bindDN = cfg.value;
+                } else if (cfg.key === 'ldap_enabled') {
+                    dbConfig.enabled = cfg.value === 'true';
+                }
+            });
+
+            // DB config overrides Env vars
+            if (dbConfig.bindPassword) this.config.bindPassword = dbConfig.bindPassword;
+            if (dbConfig.bindDN) this.config.bindDN = dbConfig.bindDN;
+            if (dbConfig.enabled !== undefined) this.config.enabled = dbConfig.enabled;
+
+            this.isInitialized = true;
+            // console.log('[LDAP] Connection initialized with dynamic config');
+        } catch (error) {
+            console.error('[LDAP] Failed to initialize config from DB:', error.message);
+            // Fallback to env vars is already set in constructor
+        }
     }
 
     /**
      * Check if LDAP is enabled
      */
     isEnabled() {
-        return this.enabled && this.url && this.bindDN;
+        return this.config.enabled && this.config.url;
     }
 
     /**
@@ -28,13 +69,13 @@ class LdapService {
      */
     createClient() {
         const tlsOptions = {
-            rejectUnauthorized: this.tlsRejectUnauthorized
+            rejectUnauthorized: this.config.tlsRejectUnauthorized
         };
 
         return ldap.createClient({
-            url: this.url,
+            url: this.config.url,
             tlsOptions,
-            connectTimeout: 10000,
+            connectTimeout: 5000,
             timeout: 10000
         });
     }
@@ -46,8 +87,17 @@ class LdapService {
      * @returns {Promise<{success: boolean, user?: object, error?: string}>}
      */
     async authenticateUser(email, password) {
+        if (!this.isInitialized) {
+            await this.initialize();
+        }
+
         if (!this.isEnabled()) {
             return { success: false, error: 'LDAP is not enabled' };
+        }
+
+        // Ensure we have binding credentials
+        if (!this.config.bindDN || !this.config.bindPassword) {
+            return { success: false, error: 'LDAP configuration missing (Bind DN/Password)' };
         }
 
         return new Promise((resolve) => {
@@ -78,7 +128,7 @@ class LdapService {
             });
 
             // First, bind with service account to search for the user
-            client.bind(this.bindDN, this.bindPassword, (bindErr) => {
+            client.bind(this.config.bindDN, this.config.bindPassword, (bindErr) => {
                 if (bindErr) {
                     console.error('[LDAP] Service bind error:', bindErr.message);
                     cleanup();
@@ -90,13 +140,15 @@ class LdapService {
                 const username = email.includes('@') ? email.split('@')[0] : email;
 
                 // Search for the user
+                const userSearchBase = this.config.userSearchBase || this.config.baseDN;
                 const searchOptions = {
                     scope: 'sub',
+                    // Try multiple attributes to be flexible
                     filter: `(|(userPrincipalName=${email})(sAMAccountName=${username})(mail=${email}))`,
                     attributes: ['dn', 'cn', 'givenName', 'sn', 'mail', 'userPrincipalName', 'sAMAccountName']
                 };
 
-                client.search(this.userSearchBase, searchOptions, (searchErr, searchRes) => {
+                client.search(userSearchBase, searchOptions, (searchErr, searchRes) => {
                     if (searchErr) {
                         console.error('[LDAP] Search error:', searchErr.message);
                         cleanup();
@@ -173,39 +225,16 @@ class LdapService {
                     cleanup();
                     resolve({ success: false, error: 'LDAP authentication timeout' });
                 }
-            }, 15000);
+            }, 10000);
         });
     }
 
     /**
-     * Test LDAP connection with service account
-     * @returns {Promise<{success: boolean, error?: string}>}
+     * Reload configuration from DB
      */
-    async testConnection() {
-        if (!this.isEnabled()) {
-            return { success: false, error: 'LDAP is not enabled' };
-        }
-
-        return new Promise((resolve) => {
-            const client = this.createClient();
-
-            client.on('error', (err) => {
-                resolve({ success: false, error: err.message });
-            });
-
-            client.bind(this.bindDN, this.bindPassword, (err) => {
-                if (err) {
-                    resolve({ success: false, error: err.message });
-                } else {
-                    client.unbind();
-                    resolve({ success: true });
-                }
-            });
-
-            setTimeout(() => {
-                resolve({ success: false, error: 'Connection timeout' });
-            }, 10000);
-        });
+    async reloadConfig() {
+        await this.initialize();
+        return this.config;
     }
 }
 
