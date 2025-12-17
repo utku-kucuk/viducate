@@ -149,7 +149,6 @@ AttemptAnswer.belongsTo(Option, { foreignKey: 'optionId', as: 'option' });
 module.exports = {
   User,
   Course,
-  Module,
   Video,
   Progress,
   Log,
