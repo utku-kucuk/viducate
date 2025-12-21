@@ -81,6 +81,15 @@ const login = async (req, res) => {
             console.log(`[auth] LDAP auth failed for ${email}: ${ldapResult.error}`);
             return res.status(401).json({ error: 'Invalid email or password.' });
           }
+
+          // Sync user details from LDAP on successful login
+          if (ldapResult.user) {
+            await user.update({
+              firstName: ldapResult.user.firstName || user.firstName,
+              lastName: ldapResult.user.lastName || user.lastName,
+              // We could sync other fields here if needed
+            });
+          }
         } else {
           return res.status(401).json({ error: 'LDAP authentication is not available.' });
         }
@@ -95,7 +104,7 @@ const login = async (req, res) => {
         }
       }
     } else {
-      // User not found in local DB - try LDAP if enabled
+      // User not found in local DB by the input email/username - try LDAP if enabled
       if (ldapService.isEnabled()) {
         console.log(`[auth] User ${email} not found locally, trying LDAP...`);
         const ldapResult = await ldapService.authenticateUser(email, password);
@@ -105,25 +114,49 @@ const login = async (req, res) => {
           return res.status(401).json({ error: 'Invalid email or password.' });
         }
 
-        // LDAP auth successful - auto-create user as teacher
-        console.log(`[auth] LDAP auth successful for ${email}, creating local user...`);
+        // LDAP auth successful
+        console.log(`[auth] LDAP auth successful for ${email}`);
 
-        // Generate a random password (won't be used for LDAP users)
-        const randomPassword = uuidv4();
-        const hashedPassword = await bcrypt.hash(randomPassword, 12);
+        // Check if user exists with the resolved email from LDAP
+        // This handles cases where user logs in with username but DB has email (e.g., jdoe vs jdoe@company.com)
+        const resolvedEmail = ldapResult.user.email || email;
+        user = await User.findOne({ where: { email: resolvedEmail } });
 
-        user = await User.create({
-          email: ldapResult.user.email || email,
-          password: hashedPassword,
-          firstName: ldapResult.user.firstName || 'AD',
-          lastName: ldapResult.user.lastName || 'User',
-          role: 'teacher', // Default role for AD users
-          authProvider: 'ldap',
-          isEmailVerified: true, // AD users are pre-verified
-          isActive: true
-        });
+        if (user) {
+          // User exists (matched by resolved email), but we missed them in initial lookup
+          console.log(`[auth] User found by resolved email: ${resolvedEmail}`);
 
-        console.log(`[auth] Created LDAP user: ${user.email} with role: ${user.role}`);
+          // Check if account is active
+          if (!user.isActive) {
+            return res.status(401).json({ error: 'Account is deactivated.' });
+          }
+
+          // Sync user details
+          await user.update({
+            firstName: ldapResult.user.firstName || user.firstName,
+            lastName: ldapResult.user.lastName || user.lastName
+          });
+        } else {
+          // Create new user
+          console.log(`[auth] Creating new local user for LDAP user...`);
+
+          // Generate a random password (won't be used for LDAP users)
+          const randomPassword = uuidv4();
+          const hashedPassword = await bcrypt.hash(randomPassword, 12);
+
+          user = await User.create({
+            email: resolvedEmail,
+            password: hashedPassword,
+            firstName: ldapResult.user.firstName || 'AD',
+            lastName: ldapResult.user.lastName || 'User',
+            role: 'teacher', // Default role for AD users
+            authProvider: 'ldap',
+            isEmailVerified: true, // AD users are pre-verified
+            isActive: true
+          });
+
+          console.log(`[auth] Created LDAP user: ${user.email} with role: ${user.role}`);
+        }
       } else {
         if (process.env.NODE_ENV === 'development') {
           console.log(`[auth] Login failed: user not found for email ${email}`);
