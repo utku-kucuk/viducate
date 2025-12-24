@@ -44,11 +44,11 @@ const validateRegistration = [
 ];
 
 const validateLogin = [
-  check('email')
+  body('email')
     .notEmpty()
     .withMessage('Email or Username is required')
     .trim(),
-  check('password')
+  body('password')
     .notEmpty()
     .withMessage('Password is required'),
   handleValidationErrors

@@ -12,15 +12,20 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions
+  DialogActions,
+  Tabs,
+  Tab
 } from '@mui/material';
 import { Link as RouterLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
+import BusinessIcon from '@mui/icons-material/Business';
+import PersonIcon from '@mui/icons-material/Person';
 
 const Login = () => {
   const { t } = useTranslation();
+  const [loginMode, setLoginMode] = useState(0); // 0 = Standard, 1 = Corporate (AD)
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -35,6 +40,10 @@ const Login = () => {
   });
   const [passwordErrors, setPasswordErrors] = useState({});
   const [passwordLoading, setPasswordLoading] = useState(false);
+
+  // Update form label based on mode
+  const emailLabel = loginMode === 1 ? 'Kullanıcı Adı veya E-posta' : t('auth.emailAddress');
+  const helperText = loginMode === 1 ? 'Örn: viducate\\kullanici veya kullanici' : '';
 
   const { login, error, clearError } = useAuth();
   const navigate = useNavigate();
@@ -133,8 +142,20 @@ const Login = () => {
             {t('auth.welcomeBack')}
           </Typography>
 
-          <Typography variant="body1" color="text.secondary" sx={{ mb: 4, textAlign: 'center' }}>
-            {t('auth.signInSubtitle')}
+          <Tabs
+            value={loginMode}
+            onChange={(e, val) => setLoginMode(val)}
+            variant="fullWidth"
+            sx={{ width: '100%', mb: 4, borderBottom: 1, borderColor: 'divider' }}
+          >
+            <Tab icon={<PersonIcon />} label="Standart Giriş" />
+            <Tab icon={<BusinessIcon />} label="Kurumsal Giriş (AD)" />
+          </Tabs>
+
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 2, textAlign: 'center' }}>
+            {loginMode === 0
+              ? 'Viducate yerel hesabınızla giriş yapın.'
+              : 'Kurumsal Active Directory hesabınızla giriş yapın.'}
           </Typography>
 
           {error && (
@@ -155,14 +176,14 @@ const Login = () => {
               required
               fullWidth
               id="email"
-              label={t('auth.emailAddress')}
+              label={loginMode === 1 ? 'Kullanıcı Adı / Active Directory ID' : t('auth.emailAddress')}
               name="email"
               autoComplete="email"
               autoFocus
               value={formData.email}
               onChange={handleChange}
               error={!!errors.email}
-              helperText={errors.email}
+              helperText={errors.email || (loginMode === 1 ? 'Örn: viducate\\kullanici' : '')}
               sx={{ mb: 2 }}
             />
             <TextField
