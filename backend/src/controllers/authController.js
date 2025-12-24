@@ -121,30 +121,47 @@ const login = async (req, res) => {
         }
 
         // LDAP Authentication Successful!
-        // Just-In-Time (JIT) Provisioning
-        console.log(`[auth] LDAP Discovery successful for ${email}. Provisioning new user...`);
+        console.log(`[auth] LDAP Discovery successful for ${email}. Checking for existing account match...`);
 
-        // Generate a random password placeholder (required by DB schema, unused for auth)
-        const randomPassword = uuidv4();
-        const hashedPassword = await bcrypt.hash(randomPassword, 12);
+        // Check if the canonical email from LDAP (e.g. 'viducate\bt') already exists in DB
+        const canonicalEmail = ldapResult.user?.email || email;
+        let existingUser = await User.findOne({ where: { email: canonicalEmail } });
 
-        // Map LDAP attributes to User model
-        // Fallback to email parts if names are missing
-        const firstName = ldapResult.user?.firstName || email.split('@')[0];
-        const lastName = ldapResult.user?.lastName || 'User';
+        if (existingUser) {
+          console.log(`[auth] Found existing user account for ${canonicalEmail}. Logging in...`);
+          user = existingUser;
 
-        user = await User.create({
-          email: ldapResult.user?.email || email, // Use canonical email from AD if available
-          password: hashedPassword,
-          firstName: firstName,
-          lastName: lastName,
-          role: 'teacher',          // Default role for new corporate users (Safe default)
-          authProvider: 'ldap',     // Mark as LDAP user
-          isEmailVerified: true,    // Corporate accounts are trusted
-          isActive: true
-        });
+          // Optional: Update details if needed
+          await user.update({
+            lastLogin: new Date(),
+            isActive: true
+          });
 
-        console.log(`[auth] JIT Provisioning complete: ${user.email} (Role: ${user.role})`);
+        } else {
+          // Just-In-Time (JIT) Provisioning - Create NEW User
+          console.log(`[auth] No local account found. Provisioning new user for ${canonicalEmail}...`);
+
+          // Generate a random password placeholder
+          const randomPassword = uuidv4();
+          const hashedPassword = await bcrypt.hash(randomPassword, 12);
+
+          // Map LDAP attributes to User model
+          const firstName = ldapResult.user?.firstName || email.split('@')[0];
+          const lastName = ldapResult.user?.lastName || 'User';
+
+          user = await User.create({
+            email: canonicalEmail,
+            password: hashedPassword,
+            firstName: firstName,
+            lastName: lastName,
+            role: 'teacher',          // Default role
+            authProvider: 'ldap',
+            isEmailVerified: true,
+            isActive: true
+          });
+
+          console.log(`[auth] JIT Provisioning complete: ${user.email} (Role: ${user.role})`);
+        }
       } else {
         // LDAP disabled and user not found locally
         if (process.env.NODE_ENV === 'development') {
