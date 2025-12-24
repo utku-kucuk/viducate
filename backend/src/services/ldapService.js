@@ -158,21 +158,36 @@ class LdapService {
                     bindPrincipal = `${domainPrefix}\\${email}`;
                 }
 
-                console.log(`[LDAP] No Service Account. Attempting Direct Bind for ${bindPrincipal}...`);
+                console.log(`[LDAP] No Service Account. Attempting Direct Bind for calculated principal: ${bindPrincipal}`);
 
                 client.bind(bindPrincipal, password, (bindErr) => {
                     if (bindErr) {
-                        console.warn(`[LDAP] Direct bind failed for ${bindPrincipal}: ${bindErr.message}`);
-                        cleanup();
-                        // Security: Don't reveal specific error details
-                        resolve({ success: false, error: 'Invalid email or password.' });
-                        return;
-                    }
+                        console.warn(`[LDAP] Direct bind failed for configured domain format (${bindPrincipal}): ${bindErr.message}`);
 
-                    // Authentication Successful!
-                    // Pass the FULL bindPrincipal (viducate\user) to search function, 
-                    // which will correctly strip it back to "user" for the sAMAccountName search.
-                    this._searchAndBindUser(client, bindPrincipal, password, resolve, cleanup, true);
+                        // Fallback: Try binding with raw username (some AD configurations support this or user input includes domain differently)
+                        if (bindPrincipal !== email) {
+                            console.log(`[LDAP] Fallback: Attempting Direct Bind with raw input: ${email}`);
+                            client.bind(email, password, (fallbackErr) => {
+                                if (fallbackErr) {
+                                    console.warn(`[LDAP] Fallback Direct bind failed for ${email}: ${fallbackErr.message}`);
+                                    cleanup();
+                                    resolve({ success: false, error: 'Invalid email or password.' });
+                                } else {
+                                    console.log(`[LDAP] Auth successful (Fallback Mode) for: ${email}`);
+                                    this._searchAndBindUser(client, email, password, resolve, cleanup, true);
+                                }
+                            });
+                        } else {
+                            // No difference to retry
+                            cleanup();
+                            resolve({ success: false, error: 'Invalid email or password.' });
+                        }
+                    } else {
+                        // Authentication Successful!
+                        // Pass the FULL bindPrincipal (viducate\user) to search function
+                        console.log(`[LDAP] Auth successful (Standard Mode) for: ${bindPrincipal}`);
+                        this._searchAndBindUser(client, bindPrincipal, password, resolve, cleanup, true);
+                    }
                 });
             }
 
