@@ -177,8 +177,14 @@ const login = async (req, res) => {
     });
   } catch (error) {
     console.error('Login error details:', error);
+    if (error.errors) {
+      error.errors.forEach(e => console.error(`Validation error on ${e.path}: ${e.message}`));
+    }
     console.error('Stack:', error.stack);
-    res.status(500).json({ error: 'Login failed.', details: error.message });
+    res.status(500).json({
+      error: 'Login failed.',
+      details: error.errors ? error.errors.map(e => e.message).join(', ') : error.message
+    });
   }
 };
 
