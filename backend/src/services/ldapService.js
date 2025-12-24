@@ -146,11 +146,23 @@ class LdapService {
             } else {
                 // --- STRATEGY 2: ZERO-KNOWLEDGE (Direct Bind) ---
                 // Bind directly with User's credentials -> (Optional) Search self for info
-                console.log(`[LDAP] No Service Account configured. Attempting Direct Bind for ${email}...`);
 
-                client.bind(email, password, (bindErr) => {
+                // Auto-prepend domain if user only provided username (e.g. "bt" -> "viducate\bt")
+                let bindPrincipal = email;
+                if (!bindPrincipal.includes('\\') && !bindPrincipal.includes('@')) {
+                    // Extract domain from configured bindDN if possible (e.g. "viducate\admin" -> "viducate")
+                    // Default to 'viducate' if parsing fails or bindDN is missing
+                    const domainPrefix = this.config.bindDN && this.config.bindDN.includes('\\')
+                        ? this.config.bindDN.split('\\')[0]
+                        : 'viducate';
+                    bindPrincipal = `${domainPrefix}\\${email}`;
+                }
+
+                console.log(`[LDAP] No Service Account. Attempting Direct Bind for ${bindPrincipal}...`);
+
+                client.bind(bindPrincipal, password, (bindErr) => {
                     if (bindErr) {
-                        console.warn(`[LDAP] Direct bind failed for ${email}: ${bindErr.message}`);
+                        console.warn(`[LDAP] Direct bind failed for ${bindPrincipal}: ${bindErr.message}`);
                         cleanup();
                         // Security: Don't reveal specific error details
                         resolve({ success: false, error: 'Invalid email or password.' });
@@ -158,9 +170,9 @@ class LdapService {
                     }
 
                     // Authentication Successful!
-                    // Now try to fetch user details (Self-Search) using their own connection
-                    // If AD permissions restrict this, we fallback to email parsing.
-                    this._searchAndBindUser(client, email, password, resolve, cleanup, true);
+                    // Pass the FULL bindPrincipal (viducate\user) to search function, 
+                    // which will correctly strip it back to "user" for the sAMAccountName search.
+                    this._searchAndBindUser(client, bindPrincipal, password, resolve, cleanup, true);
                 });
             }
 

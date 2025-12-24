@@ -176,14 +176,14 @@ const Login = () => {
               required
               fullWidth
               id="email"
-              label={loginMode === 1 ? 'Kullanıcı Adı / Active Directory ID' : t('auth.emailAddress')}
+              label={loginMode === 1 ? 'Kullanıcı Adı (Kurumsal Sicil)' : t('auth.emailAddress')}
               name="email"
               autoComplete="email"
               autoFocus
               value={formData.email}
               onChange={handleChange}
               error={!!errors.email}
-              helperText={errors.email || (loginMode === 1 ? 'Örn: viducate\\kullanici' : '')}
+              helperText={errors.email}
               sx={{ mb: 2 }}
             />
             <TextField
