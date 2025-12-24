@@ -95,10 +95,7 @@ class LdapService {
             return { success: false, error: 'LDAP is not enabled' };
         }
 
-        // Ensure we have binding credentials
-        if (!this.config.bindDN || !this.config.bindPassword) {
-            return { success: false, error: 'LDAP configuration missing (Bind DN/Password)' };
-        }
+        // Note: We don't block here if bindDN is missing, because we support Direct Bind fallback.
 
         return new Promise((resolve) => {
             const client = this.createClient();
@@ -127,98 +124,45 @@ class LdapService {
                 resolve({ success: false, error: 'LDAP connection failed' });
             });
 
-            // First, bind with service account to search for the user
-            client.bind(this.config.bindDN, this.config.bindPassword, (bindErr) => {
-                if (bindErr) {
-                    console.error('[LDAP] Service bind error:', bindErr.message);
-                    cleanup();
-                    resolve({ success: false, error: 'LDAP service authentication failed' });
-                    return;
-                }
+            // LOGIC: Check if we have a Service Account
+            const hasServiceAccount = this.config.bindDN && this.config.bindPassword && this.config.bindPassword !== 'YOUR_PASSWORD_HERE';
 
-                // Extract username from email if needed
-                const username = email.includes('@') ? email.split('@')[0] : email;
+            if (hasServiceAccount) {
+                // --- STRATEGY 1: SERVICE ACCOUNT (Standard) ---
+                // Bind with Admin Service Account -> Search for User -> Verify (Bind) User
+                // console.log('[LDAP] Using Service Account for search...');
 
-                // Search for the user
-                const userSearchBase = this.config.userSearchBase || this.config.baseDN;
-                const searchOptions = {
-                    scope: 'sub',
-                    // Try multiple attributes to be flexible
-                    filter: `(|(userPrincipalName=${email})(sAMAccountName=${username})(mail=${email}))`,
-                    attributes: ['dn', 'cn', 'givenName', 'sn', 'mail', 'userPrincipalName', 'sAMAccountName']
-                };
-
-                client.search(userSearchBase, searchOptions, (searchErr, searchRes) => {
-                    if (searchErr) {
-                        console.error('[LDAP] Search error:', searchErr.message);
+                client.bind(this.config.bindDN, this.config.bindPassword, (bindErr) => {
+                    if (bindErr) {
+                        console.error('[LDAP] Service bind error:', bindErr.message);
                         cleanup();
-                        resolve({ success: false, error: 'LDAP user search failed' });
+                        resolve({ success: false, error: 'LDAP service authentication failed' });
                         return;
                     }
 
-                    let userEntry = null;
-
-                    searchRes.on('searchEntry', (entry) => {
-                        const attrs = {};
-                        entry.attributes.forEach(attr => {
-                            attrs[attr.type] = attr.values[0];
-                        });
-
-                        userEntry = {
-                            dn: entry.dn.toString(),
-                            firstName: attrs.givenName || '',
-                            lastName: attrs.sn || '',
-                            // Prefer email, fall back to userPrincipalName, then input
-                            email: (attrs.mail || attrs.userPrincipalName || email).toLowerCase(),
-                            username: attrs.sAMAccountName || username
-                        };
-                    });
-
-                    searchRes.on('error', (err) => {
-                        console.error('[LDAP] Search stream error:', err.message);
-                        cleanup();
-                        resolve({ success: false, error: 'LDAP search failed' });
-                    });
-
-                    searchRes.on('end', () => {
-                        if (!userEntry) {
-                            console.log('[LDAP] User not found:', email);
-                            cleanup();
-                            resolve({ success: false, error: 'User not found in Active Directory' });
-                            return;
-                        }
-
-                        // Now try to bind as the user with their password
-                        const userClient = this.createClient();
-
-                        userClient.on('error', () => {
-                            cleanup();
-                            resolve({ success: false, error: 'LDAP authentication failed' });
-                        });
-
-                        userClient.bind(userEntry.dn, password, (userBindErr) => {
-                            try {
-                                userClient.unbind();
-                            } catch (e) {
-                                // Ignore
-                            }
-                            cleanup();
-
-                            if (userBindErr) {
-                                console.log('[LDAP] User bind failed for:', email);
-                                resolve({ success: false, error: 'Invalid credentials' });
-                                return;
-                            }
-
-                            console.log('[LDAP] Authentication successful for:', email);
-                            resolve({
-                                success: true,
-                                user: userEntry
-                            });
-                        });
-                    });
+                    this._searchAndBindUser(client, email, password, resolve, cleanup);
                 });
-            });
+
+            } else {
+                // --- STRATEGY 2: ZERO-KNOWLEDGE (Direct Bind) ---
+                // Bind directly with User's credentials -> (Optional) Search self for info
+                console.log(`[LDAP] No Service Account configured. Attempting Direct Bind for ${email}...`);
+
+                client.bind(email, password, (bindErr) => {
+                    if (bindErr) {
+                        console.warn(`[LDAP] Direct bind failed for ${email}: ${bindErr.message}`);
+                        cleanup();
+                        // Security: Don't reveal specific error details
+                        resolve({ success: false, error: 'Invalid email or password.' });
+                        return;
+                    }
+
+                    // Authentication Successful!
+                    // Now try to fetch user details (Self-Search) using their own connection
+                    // If AD permissions restrict this, we fallback to email parsing.
+                    this._searchAndBindUser(client, email, password, resolve, cleanup, true);
+                });
+            }
 
             // Timeout fallback
             setTimeout(() => {
@@ -227,6 +171,123 @@ class LdapService {
                     resolve({ success: false, error: 'LDAP authentication timeout' });
                 }
             }, 10000);
+        });
+    }
+
+    /**
+     * Helper to Search and Verify User (Shared Logic)
+     * @param {object} client - Authenticated LDAP client
+     * @param {string} email - User email
+     * @param {string} password - User password (only needed for double-check in Service Account mode)
+     * @param {function} resolve - Promise resolver
+     * @param {function} cleanup - Cleanup function
+     * @param {boolean} isDirectBind - If true, skip the second password check (since we already bound)
+     */
+    _searchAndBindUser(client, email, password, resolve, cleanup, isDirectBind = false) {
+        const username = email.includes('@') ? email.split('@')[0] : email;
+        const userSearchBase = this.config.userSearchBase || this.config.baseDN;
+
+        const searchOptions = {
+            scope: 'sub',
+            filter: `(|(userPrincipalName=${email})(sAMAccountName=${username})(mail=${email}))`,
+            attributes: ['dn', 'cn', 'givenName', 'sn', 'mail', 'userPrincipalName', 'sAMAccountName']
+        };
+
+        client.search(userSearchBase, searchOptions, (searchErr, searchRes) => {
+            if (searchErr) {
+                console.error('[LDAP] Search error:', searchErr.message);
+                // If Direct Bind mode, search failure is acceptable (permissions), just return basic user
+                if (isDirectBind) {
+                    console.warn('[LDAP] Could not fetch details. Returning basic profile.');
+                    cleanup();
+                    resolve({
+                        success: true,
+                        user: {
+                            email: email,
+                            username: username,
+                            firstName: username, // Fallback
+                            lastName: ''
+                        }
+                    });
+                    return;
+                }
+
+                cleanup();
+                resolve({ success: false, error: 'LDAP user search failed' });
+                return;
+            }
+
+            let userEntry = null;
+
+            searchRes.on('searchEntry', (entry) => {
+                const attrs = {};
+                entry.attributes.forEach(attr => {
+                    attrs[attr.type] = attr.values[0];
+                });
+
+                userEntry = {
+                    dn: entry.dn.toString(),
+                    firstName: attrs.givenName || '',
+                    lastName: attrs.sn || '',
+                    email: (attrs.mail || attrs.userPrincipalName || email).toLowerCase(),
+                    username: attrs.sAMAccountName || username
+                };
+            });
+
+            searchRes.on('error', (err) => {
+                console.error('[LDAP] Search stream error:', err.message);
+                if (isDirectBind && !userEntry) {
+                    cleanup();
+                    // Fallback success for Direct Bind
+                    resolve({ success: true, user: { email, username, firstName: username, lastName: '' } });
+                } else {
+                    cleanup();
+                    resolve({ success: false, error: 'LDAP search failed' });
+                }
+            });
+
+            searchRes.on('end', () => {
+                if (!userEntry) {
+                    if (isDirectBind) {
+                        // User exists (bound successfully) but wasn't found in search scope or permission issue
+                        // Still return success because authentication passed
+                        cleanup();
+                        resolve({ success: true, user: { email, username, firstName: username, lastName: '' } });
+                    } else {
+                        console.log('[LDAP] User not found during search:', email);
+                        cleanup();
+                        resolve({ success: false, error: 'User not found in Active Directory' });
+                    }
+                    return;
+                }
+
+                // If we are in Service Account mode, we must NOW verify the user's password
+                // by attempting to bind AS THE USER.
+                if (!isDirectBind) {
+                    const userClient = this.createClient();
+
+                    userClient.on('error', () => { }); // Suppress async errors
+
+                    userClient.bind(userEntry.dn, password, (userBindErr) => {
+                        try { userClient.unbind(); } catch (e) { }
+
+                        cleanup();
+
+                        if (userBindErr) {
+                            console.log('[LDAP] User password verification failed for:', email);
+                            resolve({ success: false, error: 'Invalid credentials' });
+                        } else {
+                            console.log('[LDAP] Auth successful (Service Mode) for:', email);
+                            resolve({ success: true, user: userEntry });
+                        }
+                    });
+                } else {
+                    // Direct Bind mode: We already verified password in the first bind.
+                    cleanup();
+                    console.log('[LDAP] Auth successful (Direct Mode) for:', email);
+                    resolve({ success: true, user: userEntry });
+                }
+            });
         });
     }
 
