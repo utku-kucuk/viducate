@@ -104,7 +104,7 @@ const login = async (req, res) => {
         }
       }
     } else {
-    } else {
+
       // User not found in local DB - "Smart Login" Fallback
       // Try to authenticate against LDAP directly
       // If successful, this is a new LDAP user -> Create them (JIT)

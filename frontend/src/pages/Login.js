@@ -35,7 +35,7 @@ const Login = () => {
   });
   const [passwordErrors, setPasswordErrors] = useState({});
   const [passwordLoading, setPasswordLoading] = useState(false);
-  
+
   const { login, error, clearError } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -80,7 +80,7 @@ const Login = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!validateForm()) return;
 
     setLoading(true);
@@ -90,14 +90,14 @@ const Login = () => {
     if (result.success) {
       // Check if password change is required
       const user = JSON.parse(localStorage.getItem('user') || '{}');
-      
+
       if (user.isPasswordChangeRequired) {
         // Show password change modal
         setShowPasswordChangeModal(true);
       } else {
         // Role-based redirect after successful login
         let redirectPath = from;
-        
+
         if (user.role === 'admin') {
           redirectPath = '/admin';
         } else if (user.role === 'teacher') {
@@ -105,7 +105,7 @@ const Login = () => {
         } else if (user.role === 'student') {
           redirectPath = '/dashboard';
         }
-        
+
         navigate(redirectPath, { replace: true });
       }
     }
@@ -134,10 +134,16 @@ const Login = () => {
           <Typography component="h1" variant="h4" sx={{ mb: 3, fontWeight: 600 }}>
             {t('auth.welcomeBack')}
           </Typography>
-          
+
           <Typography variant="body1" color="text.secondary" sx={{ mb: 4, textAlign: 'center' }}>
             {t('auth.signInSubtitle')}
           </Typography>
+
+          {error && (
+            <Alert severity="error" sx={{ width: '100%', mb: 2 }}>
+              {error}
+            </Alert>
+          )}
 
           {error && (
             <Alert severity="error" sx={{ width: '100%', mb: 2 }}>
@@ -203,10 +209,10 @@ const Login = () => {
       </Box>
 
       {/* Password Change Modal */}
-      <Dialog 
-        open={showPasswordChangeModal} 
-        onClose={() => {}} 
-        maxWidth="sm" 
+      <Dialog
+        open={showPasswordChangeModal}
+        onClose={() => { }}
+        maxWidth="sm"
         fullWidth
         disableEscapeKeyDown
       >
@@ -261,30 +267,30 @@ const Login = () => {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button 
+          <Button
             onClick={async () => {
               // Validate
               const newErrors = {};
-              
+
               if (!passwordChangeData.currentPassword) {
                 newErrors.currentPassword = t('auth.currentPassword') + ' *';
               }
-              
+
               if (!passwordChangeData.newPassword) {
                 newErrors.newPassword = t('auth.newPassword') + ' *';
               } else if (passwordChangeData.newPassword.length < 6) {
                 newErrors.newPassword = '6+';
               }
-              
+
               if (passwordChangeData.newPassword !== passwordChangeData.confirmPassword) {
                 newErrors.confirmPassword = t('auth.confirmPassword') + ' !';
               }
-              
+
               if (Object.keys(newErrors).length > 0) {
                 setPasswordErrors(newErrors);
                 return;
               }
-              
+
               // Change password
               setPasswordLoading(true);
               try {
@@ -295,15 +301,15 @@ const Login = () => {
                 }, {
                   headers: { Authorization: `Bearer ${token}` }
                 });
-                
+
                 // Update user in localStorage
                 const user = JSON.parse(localStorage.getItem('user') || '{}');
                 user.isPasswordChangeRequired = false;
                 localStorage.setItem('user', JSON.stringify(user));
-                
+
                 // Close modal and redirect
                 setShowPasswordChangeModal(false);
-                
+
                 // Role-based redirect
                 let redirectPath = from;
                 if (user.role === 'teacher' || user.role === 'admin') {
@@ -311,7 +317,7 @@ const Login = () => {
                 } else if (user.role === 'student') {
                   redirectPath = '/dashboard';
                 }
-                
+
                 navigate(redirectPath, { replace: true });
               } catch (error) {
                 const errorMessage = error.response?.data?.error || 'Password change failed';
