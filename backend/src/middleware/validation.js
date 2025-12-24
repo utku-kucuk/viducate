@@ -9,7 +9,7 @@ const handleValidationErrors = (req, res, next) => {
       logger.debug('Request body:', req.body);
       logger.debug('Validation errors:', errors.array());
     }
-    return res.status(400).json({ 
+    return res.status(400).json({
       error: 'Validation failed',
       details: errors.array()
     });
@@ -44,11 +44,11 @@ const validateRegistration = [
 ];
 
 const validateLogin = [
-  body('email')
-    .isEmail()
-    .normalizeEmail()
-    .withMessage('Please provide a valid email address'),
-  body('password')
+  check('email')
+    .notEmpty()
+    .withMessage('Email or Username is required')
+    .trim(),
+  check('password')
     .notEmpty()
     .withMessage('Password is required'),
   handleValidationErrors
