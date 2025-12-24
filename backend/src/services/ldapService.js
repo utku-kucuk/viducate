@@ -184,14 +184,27 @@ class LdapService {
      * @param {boolean} isDirectBind - If true, skip the second password check (since we already bound)
      */
     _searchAndBindUser(client, email, password, resolve, cleanup, isDirectBind = false) {
-        const username = email.includes('@') ? email.split('@')[0] : email;
+        // Robust Username Parsing
+        let cleanUsername = email;
+
+        if (email.includes('\\')) {
+            // Format: DOMAIN\User -> User
+            cleanUsername = email.split('\\')[1];
+        } else if (email.includes('@')) {
+            // Format: User@domain.com -> User
+            cleanUsername = email.split('@')[0];
+        }
+
         const userSearchBase = this.config.userSearchBase || this.config.baseDN;
 
         const searchOptions = {
             scope: 'sub',
-            filter: `(|(userPrincipalName=${email})(sAMAccountName=${username})(mail=${email}))`,
+            // Search by sAMAccountName (stripping domain) OR userPrincipalName (full email/id)
+            filter: `(|(sAMAccountName=${cleanUsername})(userPrincipalName=${email})(mail=${email}))`,
             attributes: ['dn', 'cn', 'givenName', 'sn', 'mail', 'userPrincipalName', 'sAMAccountName']
         };
+
+        // console.log(`[LDAP] Searching user with sAMAccountName=${cleanUsername} or UPN=${email}`);
 
         client.search(userSearchBase, searchOptions, (searchErr, searchRes) => {
             if (searchErr) {
@@ -204,8 +217,8 @@ class LdapService {
                         success: true,
                         user: {
                             email: email,
-                            username: username,
-                            firstName: username, // Fallback
+                            username: cleanUsername,
+                            firstName: cleanUsername,
                             lastName: ''
                         }
                     });
@@ -227,10 +240,11 @@ class LdapService {
 
                 userEntry = {
                     dn: entry.dn.toString(),
-                    firstName: attrs.givenName || '',
+                    firstName: attrs.givenName || cleanUsername, // Fallback to username
                     lastName: attrs.sn || '',
+                    // Important: If we found a real email, use it! Otherwise fallback to input.
                     email: (attrs.mail || attrs.userPrincipalName || email).toLowerCase(),
-                    username: attrs.sAMAccountName || username
+                    username: attrs.sAMAccountName || cleanUsername
                 };
             });
 
@@ -239,7 +253,7 @@ class LdapService {
                 if (isDirectBind && !userEntry) {
                     cleanup();
                     // Fallback success for Direct Bind
-                    resolve({ success: true, user: { email, username, firstName: username, lastName: '' } });
+                    resolve({ success: true, user: { email, username: cleanUsername, firstName: cleanUsername, lastName: '' } });
                 } else {
                     cleanup();
                     resolve({ success: false, error: 'LDAP search failed' });
@@ -252,7 +266,7 @@ class LdapService {
                         // User exists (bound successfully) but wasn't found in search scope or permission issue
                         // Still return success because authentication passed
                         cleanup();
-                        resolve({ success: true, user: { email, username, firstName: username, lastName: '' } });
+                        resolve({ success: true, user: { email, username: cleanUsername, firstName: cleanUsername, lastName: '' } });
                     } else {
                         console.log('[LDAP] User not found during search:', email);
                         cleanup();
