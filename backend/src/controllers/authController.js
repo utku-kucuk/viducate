@@ -104,62 +104,51 @@ const login = async (req, res) => {
         }
       }
     } else {
-      // User not found in local DB by the input email/username - try LDAP if enabled
+    } else {
+      // User not found in local DB - "Smart Login" Fallback
+      // Try to authenticate against LDAP directly
+      // If successful, this is a new LDAP user -> Create them (JIT)
+
       if (ldapService.isEnabled()) {
-        console.log(`[auth] User ${email} not found locally, trying LDAP...`);
+        console.log(`[auth] User ${email} not found locally. Attempting LDAP discovery...`);
+
         const ldapResult = await ldapService.authenticateUser(email, password);
 
         if (!ldapResult.success) {
-          console.log(`[auth] LDAP auth failed for ${email}: ${ldapResult.error}`);
+          // Both Local and LDAP failed
+          console.log(`[auth] Hybrid login failed for ${email}: ${ldapResult.error}`);
           return res.status(401).json({ error: 'Invalid email or password.' });
         }
 
-        // LDAP auth successful
-        console.log(`[auth] LDAP auth successful for ${email}`);
+        // LDAP Authentication Successful!
+        // Just-In-Time (JIT) Provisioning
+        console.log(`[auth] LDAP Discovery successful for ${email}. Provisioning new user...`);
 
-        // Check if user exists with the resolved email from LDAP
-        // This handles cases where user logs in with username but DB has email (e.g., jdoe vs jdoe@company.com)
-        const resolvedEmail = ldapResult.user.email || email;
-        user = await User.findOne({ where: { email: resolvedEmail } });
+        // Generate a random password placeholder (required by DB schema, unused for auth)
+        const randomPassword = uuidv4();
+        const hashedPassword = await bcrypt.hash(randomPassword, 12);
 
-        if (user) {
-          // User exists (matched by resolved email), but we missed them in initial lookup
-          console.log(`[auth] User found by resolved email: ${resolvedEmail}`);
+        // Map LDAP attributes to User model
+        // Fallback to email parts if names are missing
+        const firstName = ldapResult.user?.firstName || email.split('@')[0];
+        const lastName = ldapResult.user?.lastName || 'User';
 
-          // Check if account is active
-          if (!user.isActive) {
-            return res.status(401).json({ error: 'Account is deactivated.' });
-          }
+        user = await User.create({
+          email: ldapResult.user?.email || email, // Use canonical email from AD if available
+          password: hashedPassword,
+          firstName: firstName,
+          lastName: lastName,
+          role: 'teacher',          // Default role for new corporate users (Safe default)
+          authProvider: 'ldap',     // Mark as LDAP user
+          isEmailVerified: true,    // Corporate accounts are trusted
+          isActive: true
+        });
 
-          // Sync user details
-          await user.update({
-            firstName: ldapResult.user.firstName || user.firstName,
-            lastName: ldapResult.user.lastName || user.lastName
-          });
-        } else {
-          // Create new user
-          console.log(`[auth] Creating new local user for LDAP user...`);
-
-          // Generate a random password (won't be used for LDAP users)
-          const randomPassword = uuidv4();
-          const hashedPassword = await bcrypt.hash(randomPassword, 12);
-
-          user = await User.create({
-            email: resolvedEmail,
-            password: hashedPassword,
-            firstName: ldapResult.user.firstName || 'AD',
-            lastName: ldapResult.user.lastName || 'User',
-            role: 'teacher', // Default role for AD users
-            authProvider: 'ldap',
-            isEmailVerified: true, // AD users are pre-verified
-            isActive: true
-          });
-
-          console.log(`[auth] Created LDAP user: ${user.email} with role: ${user.role}`);
-        }
+        console.log(`[auth] JIT Provisioning complete: ${user.email} (Role: ${user.role})`);
       } else {
+        // LDAP disabled and user not found locally
         if (process.env.NODE_ENV === 'development') {
-          console.log(`[auth] Login failed: user not found for email ${email}`);
+          console.log(`[auth] Login failed: User not found and LDAP disabled.`);
         }
         return res.status(401).json({ error: 'Invalid email or password.' });
       }

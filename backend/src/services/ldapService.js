@@ -168,7 +168,8 @@ class LdapService {
                             dn: entry.dn.toString(),
                             firstName: attrs.givenName || '',
                             lastName: attrs.sn || '',
-                            email: attrs.mail || attrs.userPrincipalName || email,
+                            // Prefer email, fall back to userPrincipalName, then input
+                            email: (attrs.mail || attrs.userPrincipalName || email).toLowerCase(),
                             username: attrs.sAMAccountName || username
                         };
                     });
