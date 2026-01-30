@@ -30,7 +30,7 @@ fi
 
 # Get Domain Name
 while [[ -z "$DOMAIN_NAME" ]]; do
-    read -p "Enter your domain name (e.g., test.mutkukucuk.com): " DOMAIN_NAME
+    read -p "Enter your domain name (e.g., test.viducate-dev.com): " DOMAIN_NAME
 done
 
 echo -e "${YELLOW}📝 Configuration:${NC}"
@@ -72,7 +72,7 @@ if [ ! -f backend/.env ]; then
         
         # Update FRONTEND_URL to match the chosen domain
         # Assuming HTTP for now, user can change to https manually if needed
-        sed -i "s|https://test.mutkukucuk.com|http://$DOMAIN_NAME|g" backend/.env
+        sed -i "s|https://test.viducate-dev.com|http://$DOMAIN_NAME|g" backend/.env
         
         echo -e "${YELLOW}⚠️  Created backend/.env, updated paths, and set FRONTEND_URL to http://$DOMAIN_NAME.${NC}"
     else

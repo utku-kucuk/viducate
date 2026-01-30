@@ -120,7 +120,7 @@ const LdapSettings = () => {
                             label={t('admin.settings.serviceAccountDn', 'Service Account Bind DN')}
                             value={config.ldapBindDn}
                             onChange={(e) => setConfig({ ...config, ldapBindDn: e.target.value })}
-                            helperText="e.g. viducate\admin"
+                            helperText="e.g. DOMAIN\\username"
                             disabled={!config.ldapEnabled}
                         />
                     </Grid>

@@ -147,10 +147,10 @@ class LdapService {
                 // --- STRATEGY 2: ZERO-KNOWLEDGE (Direct Bind) ---
                 // Bind directly with User's credentials -> (Optional) Search self for info
 
-                // Auto-prepend domain if user only provided username (e.g. "bt" -> "viducate\bt")
+                // Auto-prepend domain if user only provided username (e.g. "bt" -> "DOMAIN\bt")
                 let bindPrincipal = email;
                 if (!bindPrincipal.includes('\\') && !bindPrincipal.includes('@')) {
-                    // Extract domain from configured bindDN if possible (e.g. "viducate\admin" -> "viducate")
+                    // Extract domain from configured bindDN if possible (e.g. "DOMAIN\username" -> "DOMAIN")
                     // Default to 'viducate' if parsing fails or bindDN is missing
                     const domainPrefix = this.config.bindDN && this.config.bindDN.includes('\\')
                         ? this.config.bindDN.split('\\')[0]
@@ -184,7 +184,7 @@ class LdapService {
                         }
                     } else {
                         // Authentication Successful!
-                        // Pass the FULL bindPrincipal (viducate\user) to search function
+                        // Pass the FULL bindPrincipal (DOMAIN\user) to search function
                         console.log(`[LDAP] Auth successful (Standard Mode) for: ${bindPrincipal}`);
                         this._searchAndBindUser(client, bindPrincipal, password, resolve, cleanup, true);
                     }

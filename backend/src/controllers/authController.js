@@ -84,6 +84,9 @@ const login = async (req, res) => {
 
           // Sync user details from LDAP on successful login
           if (ldapResult.user) {
+            const domainPrefix = process.env.LDAP_BIND_DN && process.env.LDAP_BIND_DN.includes('\\')
+              ? process.env.LDAP_BIND_DN.split('\\')[0]
+              : 'viducate';
             await user.update({
               firstName: ldapResult.user.firstName || user.firstName,
               lastName: ldapResult.user.lastName || user.lastName,
@@ -123,7 +126,7 @@ const login = async (req, res) => {
         // LDAP Authentication Successful!
         console.log(`[auth] LDAP Discovery successful for ${email}. Checking for existing account match...`);
 
-        // Check if the canonical email from LDAP (e.g. 'viducate\bt') already exists in DB
+        // Check if the canonical email from LDAP (e.g. 'CORP\username') already exists in DB
         const canonicalEmail = ldapResult.user?.email || email;
         let existingUser = await User.findOne({ where: { email: canonicalEmail } });
 

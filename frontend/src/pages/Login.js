@@ -43,7 +43,7 @@ const Login = () => {
 
   // Update form label based on mode
   const emailLabel = loginMode === 1 ? 'Kullanıcı Adı veya E-posta' : t('auth.emailAddress');
-  const helperText = loginMode === 1 ? 'Örn: viducate\\kullanici veya kullanici' : '';
+  const helperText = loginMode === 1 ? 'Örn: ALANADI\\kullanici veya kullanici' : '';
 
   const { login, error, clearError } = useAuth();
   const navigate = useNavigate();

@@ -2,7 +2,7 @@
 
 Viducate is a professional, high-performance online education platform designed for video-based learning. It empowers teachers to share knowledge through structured courses and quizzes, while providing students with a seamless, progress-tracked learning experience.
 
-![Viducate Banner](https://via.placeholder.com/1200x400?text=Viducate+Education+Platform)
+![Viducate Banner](assets/banner.png)
 
 ## 🌟 Key Features
 
@@ -29,127 +29,153 @@ Viducate is a professional, high-performance online education platform designed 
 
 ---
 
-## 🚀 Tech Stack
+## � Screenshots Gallery
+
+### 🌐 Landing & Discovery
+| | |
+|---|---|
+| ![Landing Page](screenshots/1.png) | ![Landing Features](screenshots/2.png) |
+
+### 🎓 Student Experience
+| | |
+|---|---|
+| ![Student Dashboard](screenshots/21.png) | ![Course Player](screenshots/22.png) |
+| ![My Learning](screenshots/23.png) | ![Achievements](screenshots/24.png) |
+
+### 👨‍🏫 Teacher Studio
+| | |
+|---|---|
+| ![Teacher Dashboard](screenshots/31.png) | ![Course Analytics](screenshots/32.png) |
+| ![Content Management](screenshots/33.png) | ![Quiz Builder](screenshots/34.png) |
+
+### 🛡️ Admin & Control
+| | |
+|---|---|
+| ![User Management](screenshots/41.png) | ![System Configuration](screenshots/42.png) |
+| ![LDAP Settings](screenshots/43.png) | ![Access Logs](screenshots/44.png) |
+
+---
+## 🚀 Technical Stack
 
 ### Frontend
 - **Framework**: [React.js](https://reactjs.org/) (Hooks, Context API)
-- **UI Library**: [Material UI (MUI)](https://mui.com/)
-- **Data Visualization**: [Recharts](https://recharts.org/)
-- **Video Playback**: [Video.js](https://videojs.com/) & [React Player](https://github.com/cookpete/react-player)
-- **Internationalization**: [i18next](https://www.i18next.com/)
+- **UI Architecture**: Material UI (MUI) components with custom theme.
+- **Analytics**: Recharts for visualizing student progress and engagement.
+- **Playback**: Video.js and React Player integration for multi-source support.
+- **i18n**: Fully localized using `react-i18next`.
 
 ### Backend
-- **Runtime**: [Node.js](https://nodejs.org/) & [Express.js](https://expressjs.com/)
-- **ORM**: [Sequelize](https://sequelize.org/)
-- **Database**: PostgreSQL (Production) / SQLite (Development)
-- **Authentication**: JWT & LDAP (Active Directory)
-- **File Processing**: [FFmpeg](https://ffmpeg.org/) (Video processing/metadata)
-- **Email Service**: [Resend](https://resend.com/) / SMTP
+- **Engine**: Node.js & Express.js.
+- **Database**: PostgreSQL (Production) / SQLite (Dev) managed via **Sequelize ORM**.
+- **Auth**: Hybrid JWT + LDAP (Active Directory) authentication layer.
+- **Processing**: FFmpeg integration for generating video metadata and processing files.
+- **Email**: Integration with Resend and traditional SMTP.
 
 ---
 
-## 📂 Project Structure
+## 🛠️ Detailed Setup Guide
+
+### 1. Prerequisites
+Before installing, ensure you have the following installed on your system:
+- **Node.js**: v18.0 or higher.
+- **Git**: For version control.
+- **FFmpeg**: Essential for generating video thumbnails and calculating durations.
+  - *Ubuntu*: `sudo apt install ffmpeg`
+  - *MacOS*: `brew install ffmpeg`
+- **PostgreSQL**: (Optional) For production-grade database usage.
+
+### 2. Installation
+The project uses a monorepo-friendly structure. You can install all dependencies from the root:
+
+```bash
+git clone <repository-url>
+cd viducate
+npm run install-all
+```
+
+### 3. Environment Configuration
+
+#### Backend (`backend/.env`)
+Copy the template and fill in your values:
+```bash
+cp backend/env.example backend/.env
+```
+Key variables to update:
+- `JWT_SECRET`: Generate a strong random string.
+- `DATABASE_URL`: Your PostgreSQL connection string (defaults to local SQLite if empty).
+- `LDAP_*`: Config if you want corporate AD login enabled.
+
+#### Frontend (`frontend/.env`)
+```bash
+cp frontend/env.example frontend/.env
+```
+
+### 4. Running the Development Server
+```bash
+# Start both Frontend and Backend concurrently
+npm run dev
+```
+- **Web App**: `http://localhost:3000`
+- **API Server**: `http://localhost:5001` (Proxied in development)
+
+---
+
+## 🛡️ Corporate Features: LDAP/AD Integration
+
+Viducate includes a highly flexible **Hybrid Authentication Engine**:
+- **Smart Discovery**: Local DB is checked first; if not found, it attempts corporate LDAP bind.
+- **JIT Provisioning**: New corporate users are automatically created in the local database upon their first successful LDAP login (Just-In-Time).
+- **Secure Bind**: Supports both Service Account bind and Direct User bind configurations.
+
+---
+
+## 📊 Video Analytics & Tracking Logic
+
+Viducate uses a sophisticated logic to ensure learning integrity:
+- **Range Support**: Custom Express middleware to handle `Accept-Ranges: bytes`, ensuring 10GB+ videos stream perfectly.
+- **Progress Algorithm**: Videos are marked "Complete" only when the student watches >80% of the content.
+- **Snapshot Logic**: The player saves the current timestamp every 30 seconds, allowing students to resume exactly where they left off.
+
+---
+
+## 🚢 Production Deployment
+
+For Linux servers (Ubuntu/Debian), we recommend the included automation scripts:
+
+1. **Deployment Script**: `deployment/setup.sh`
+   - Automatically installs system dependencies (Nginx, PM2).
+   - Configures the Nginx reverse proxy.
+   - Sets up PM2 for process monitoring.
+2. **Nginx Optimization**: The project includes templates to handle large video uploads (up to 10GB) by increasing `client_max_body_size`.
+
+---
+
+## 📂 Project Directory Structure
 
 ```text
 viducate/
 ├── backend/            # Express API Server
 │   ├── src/
-│   │   ├── controllers/# Business logic
-│   │   ├── models/     # Sequelize Database schemas
-│   │   ├── routes/     # API Endpoints
-│   │   └── services/   # External integrations (LDAP, Mail)
-│   └── uploads/        # Local file storage
-├── frontend/           # React Single Page Application
+│   │   ├── controllers/# Business logic (Auth, Courses, Quizzes)
+│   │   ├── models/     # Database Schemas (Sequelize)
+│   │   ├── routes/     # REST Endpoints
+│   │   └── services/   # Outsourced logic (Email, LDAP)
+│   └── uploads/        # Local storage (Videos, PDFs, Profiles)
+├── frontend/           # React SPA
 │   ├── src/
-│   │   ├── components/ # Reusable UI components
-│   │   ├── pages/      # Route-level views
-│   │   └── i18n/       # Localization files
-└── deployment/         # Automation scripts & Nginx templates
+│   │   ├── components/ # Atomic UI components
+│   │   ├── pages/      # View layouts
+│   │   └── contexts/   # Global State (Auth)
+└── deployment/         # PM2 Configs & Nginx Templates
 ```
 
 ---
 
-## 🛠️ Getting Started
+## ❓ Troubleshooting
 
-### Prerequisites
-- Node.js (v18+)
-- PostgreSQL (or SQLite for quick testing)
-- FFmpeg installed on the system (for video features)
-
-### Installation
-
-1. **Clone and Install**
-   ```bash
-   git clone <repository-url>
-   cd viducate
-   npm run install-all
-   ```
-
-2. **Backend Configuration**
-   Create a `.env` file in the `backend/` directory:
-   ```env
-   PORT=5001
-   NODE_ENV=development
-   DATABASE_URL=postgresql://user:pass@localhost:5432/viducate
-   JWT_SECRET=your_super_secret_key
-   
-   # LDAP Integration (Optional)
-   LDAP_ENABLED=false
-   LDAP_URL=ldap://your-domain.com
-   LDAP_BIND_DN=admin@domain.com
-   LDAP_BIND_PASSWORD=password
-   
-   # Email Configuration
-   RESEND_API_KEY=re_...
-   ```
-
-3. **Run the Application**
-   ```bash
-   # From the root directory
-   npm run dev
-   ```
-   - Frontend: `http://localhost:3000`
-   - Backend: `http://localhost:5001`
-
----
-
-## 🛡️ Enterprise Features: LDAP/AD Integration
-
-Viducate features a **Hybrid Authentication System**. It seamlessly integrates with corporate Active Directory/LDAP servers:
-- **JIT Provisioning**: New users are automatically created in Viducate upon their first successful LDAP login.
-- **Smart Fallback**: The platform checks local credentials first, then falls back to LDAP discovery.
-- **Profile Sync**: Automatically imports user details (Names, Email) from the corporate directory.
-
----
-
-## 📊 Video Analytics & Tracking
-
-Unlike simple video players, Viducate implements a robust tracking algorithm:
-- **Range Requests**: Supports HTTP Range headers for smooth, buffer-free video seeking.
-- **Completion Criteria**: Content is marked "Completed" only after reaching specific duration and percentage thresholds (Configurable).
-- **Interaction Logging**: Track pauses, skips, and replay events to understand learning patterns.
-
----
-
-## 🚢 Deployment
-
-For production deployment on Linux servers, we provide a guided setup script:
-
-```bash
-chmod +x deployment/setup.sh
-./deployment/setup.sh
-```
-This script handles:
-- System dependency installation
-- Frontend build optimization
-- Nginx reverse proxy configuration
-- PM2 process management
-
----
-
-## 📸 Screenshots
-
-*Added area for mobile app and web interface screenshots*
+- **Video Freezing?**: Ensure `FFmpeg` is installed and accessible in your system PATH.
+- **CORS Errors?**: Check the `FRONTEND_URL` in your backend `.env` matches your browser URL.
+- **Database Errors?**: If using SQLite, ensure the user has write permissions to the `backend/` directory to create the `.db` file.
 
 ---
 

@@ -44,7 +44,7 @@ const Navbar = () => {
   useEffect(() => {
     setLang(i18n.language?.startsWith('tr') ? 'tr' : 'en');
   }, [i18n.language]);
-  
+
   const [anchorEl, setAnchorEl] = useState(null);
   const [mobileMenuAnchor, setMobileMenuAnchor] = useState(null);
   const [dashboardMenuAnchor, setDashboardMenuAnchor] = useState(null);
@@ -118,7 +118,7 @@ const Navbar = () => {
           startIcon={<DashboardIcon />}
           sx={{ textTransform: 'none' }}
         >
-            {t('nav.dashboards')}
+          {t('nav.dashboards')}
         </Button>
       );
     } else {
@@ -152,18 +152,7 @@ const Navbar = () => {
               ml: 0
             }}
           >
-            <Box
-              component="img"
-              src="/viducate-logo.png"
-              alt="Viducate"
-              sx={{
-                height: 28,
-                width: 'auto',
-                mr: 1.2,
-                display: 'block',
-                mt: -1
-              }}
-            />
+            <SchoolIcon sx={{ mr: 1, fontSize: 28 }} />
             <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: '.06rem' }}>
               {t('nav.brand')}
             </Typography>
@@ -389,24 +378,24 @@ const Navbar = () => {
                       <Divider />
                     </>
                   )}
-                {isAuthenticated && user?.role === 'student' && (
-                  <MenuItem component={Link} to="/dashboard" onClick={handleMenuClose}>
-                    <DashboardIcon sx={{ mr: 1 }} />
-                    {t('nav.dashboard')}
-                  </MenuItem>
-                )}
-                {isAuthenticated && (
-                  <MenuItem component={Link} to="/courses" onClick={handleMenuClose}>
-                    <BookIcon sx={{ mr: 1 }} />
-                    {t('nav.courses')}
-                  </MenuItem>
-                )}
-                {isAuthenticated && (
-                  <MenuItem component={Link} to="/notes" onClick={handleMenuClose}>
-                    <NotesIcon sx={{ mr: 1 }} />
-                    {t('nav.myNotes')}
-                  </MenuItem>
-                )}
+                  {isAuthenticated && user?.role === 'student' && (
+                    <MenuItem component={Link} to="/dashboard" onClick={handleMenuClose}>
+                      <DashboardIcon sx={{ mr: 1 }} />
+                      {t('nav.dashboard')}
+                    </MenuItem>
+                  )}
+                  {isAuthenticated && (
+                    <MenuItem component={Link} to="/courses" onClick={handleMenuClose}>
+                      <BookIcon sx={{ mr: 1 }} />
+                      {t('nav.courses')}
+                    </MenuItem>
+                  )}
+                  {isAuthenticated && (
+                    <MenuItem component={Link} to="/notes" onClick={handleMenuClose}>
+                      <NotesIcon sx={{ mr: 1 }} />
+                      {t('nav.myNotes')}
+                    </MenuItem>
+                  )}
                   <MenuItem onClick={handleProfileClick}>
                     <PersonIcon sx={{ mr: 1 }} />
                     {t('nav.profile')}
