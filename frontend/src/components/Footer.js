@@ -16,9 +16,30 @@ import {
   YouTube as YouTubeIcon
 } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
+import { IS_DEMO } from '../demo';
 
 const Footer = () => {
   const { t } = useTranslation();
+  // The marketing links below point to pages that don't exist in the static demo
+  if (IS_DEMO) {
+    return (
+      <Box component="footer" sx={{ bgcolor: 'grey.900', color: 'grey.400', py: 3, mt: 'auto' }}>
+        <Container maxWidth="lg" sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'space-between', alignItems: 'center' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'white' }}>
+            <SchoolIcon fontSize="small" />
+            <Typography variant="body2" fontWeight={600}>Viducate</Typography>
+            <Typography variant="body2" sx={{ color: 'grey.400' }}>· live demo</Typography>
+          </Box>
+          <Typography variant="body2">
+            Built by{' '}
+            <Link href="https://utkukucuk.com" color="inherit" target="_blank" rel="noopener">Utku Küçük</Link>
+            {' · '}
+            <Link href="https://github.com/utku-kucuk/viducate" color="inherit" target="_blank" rel="noopener">Source on GitHub</Link>
+          </Typography>
+        </Container>
+      </Box>
+    );
+  }
   return (
     <Box
       component="footer"

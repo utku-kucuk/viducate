@@ -5,6 +5,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import PrivateRoute from './components/PrivateRoute';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
+import DemoBanner from './demo/DemoBanner';
 
 // Pages
 import Home from './pages/Home';
@@ -25,6 +26,7 @@ function App() {
   return (
     <AuthProvider>
       <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+        <DemoBanner />
         <Navbar />
         <Box component="main" sx={{ flexGrow: 1 }}>
           <Routes>
