@@ -4,6 +4,18 @@ Viducate is a professional, high-performance online education platform designed 
 
 ![Viducate Banner](assets/banner.png)
 
+## ▶️ Live demo
+
+**[utku-kucuk.github.io/viducate](https://utku-kucuk.github.io/viducate/)**
+
+| Role | Email | Password |
+| --- | --- | --- |
+| Admin | `admin@viducate.demo` | `demo1234` |
+| Teacher | `teacher@viducate.demo` | `demo1234` |
+| Student | `student@viducate.demo` | `demo1234` |
+
+The demo is a static build of the frontend: a mock API in `frontend/src/demo/` answers every request in the browser with fictional sample data, using the same response shapes as the Express backend. Each visitor gets their own copy in `localStorage`, uploads are simulated, the demo accounts are protected from deletion and changes, and **Reset demo** restores the seed. To run the real stack with the backend, follow the [Detailed Setup Guide](#️-detailed-setup-guide) below.
+
 ## 🌟 Key Features
 
 ### 🎓 For Students

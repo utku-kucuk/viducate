@@ -22,6 +22,7 @@ import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import BusinessIcon from '@mui/icons-material/Business';
 import PersonIcon from '@mui/icons-material/Person';
+import DemoAccounts from '../demo/DemoAccounts';
 
 const Login = () => {
   const { t } = useTranslation();
@@ -164,12 +165,6 @@ const Login = () => {
             </Alert>
           )}
 
-          {error && (
-            <Alert severity="error" sx={{ width: '100%', mb: 2 }}>
-              {error}
-            </Alert>
-          )}
-
           <Box component="form" onSubmit={handleSubmit} sx={{ width: '100%' }}>
             <TextField
               margin="normal"
@@ -212,6 +207,14 @@ const Login = () => {
               {loading ? t('auth.signingIn') : t('auth.signIn')}
             </Button>
           </Box>
+
+          <DemoAccounts
+            onPick={(email, password) => {
+              setLoginMode(0);
+              setFormData({ email, password });
+              setErrors({});
+            }}
+          />
 
           <Divider sx={{ width: '100%', my: 2 }}>
             <Typography variant="body2" color="text.secondary">

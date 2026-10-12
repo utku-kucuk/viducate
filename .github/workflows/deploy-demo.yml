@@ -1,0 +1,53 @@
+name: Deploy live demo
+
+on:
+  push:
+    branches: [main]
+    paths: ['frontend/**', '.github/workflows/deploy-demo.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      # Static build with the in-browser mock API (see frontend/src/demo)
+      - run: npm run build
+        env:
+          CI: false
+          REACT_APP_DEMO: 'true'
+          PUBLIC_URL: /viducate
+          GENERATE_SOURCEMAP: false
+      # GitHub Pages has no SPA rewrites: serve the app for unknown paths too
+      - run: cp build/index.html build/404.html
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: frontend/build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
